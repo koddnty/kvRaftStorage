@@ -7,6 +7,7 @@ link_directories(/usr/local/lib)
 
 # 项目文件
 file(GLOB_RECURSE ALL_SOURCES "src/*.cc")
+list(REMOVE_ITEM ALL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 
 # 项目依赖
 find_package(yaml-cpp REQUIRED)
@@ -28,9 +29,15 @@ set (LIB_LIB
     ${HIREDIS_LIB}
 )
 
+
 # 编译 归档 KVStorage库
 add_library(KVStorageLib STATIC ${ALL_SOURCES})
+target_include_directories(KVStorageLib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    /usr/local/include/sylar
+)
 target_link_libraries(KVStorageLib PUBLIC ${LIB_LIB})
+
 
 # 编译链接可执行程序kvRaft
 add_executable(kvRaft src/main.cc)
@@ -38,10 +45,8 @@ target_link_libraries(kvRaft PRIVATE KVStorageLib)
 
 
 
-# 测试程序
-add_executable(run tests/environmentTest.cc)        # 环境测试
-target_link_libraries(run PRIVATE KVStorageLib)
 
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
 
 
