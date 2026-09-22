@@ -1,0 +1,6 @@
+# 编译文件
+bin
+cmake-build-debug
+# 中间文件
+.o
+.so
