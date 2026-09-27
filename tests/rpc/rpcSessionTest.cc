@@ -152,6 +152,18 @@ static uint64_t nowUs() {
 }
 
 // 封一个顺手的小工具：发一次调用并记录耗时
+// repair: RPCSession::call 的返回类型已经改成 m_sylar::IOState（细粒度，见 rpcClient.hpp 顶部
+//   的说明），这个测试还按旧的 CallState 写，所以整个文件编译不过。这里补一层映射，
+//   和 RPCClient::call 里的映射保持一致（CLOSED / TIMEOUT 各自区分，不再一律压成 FAILED）。
+static CallState ioStateToCallState(m_sylar::IOState st) {
+    switch (st) {
+        case m_sylar::IOState::SUCCESS: return CallState::SUCCESS;
+        case m_sylar::IOState::TIMEOUT: return CallState::TIMEOUT;
+        case m_sylar::IOState::CLOSED:  return CallState::RETRY;
+        default:                        return CallState::FAILED;
+    }
+}
+
 static m_sylar::Task<CallState> callOnce(const std::string& service, const std::string& method,
                                          const std::string& req, std::string* resp, uint64_t* us) {
     auto s = std::make_shared<std::string>(service);
@@ -160,7 +172,7 @@ static m_sylar::Task<CallState> callOnce(const std::string& service, const std::
     auto p = std::make_shared<std::string>();
 
     const uint64_t t0 = nowUs();
-    const CallState st = co_await g_sess->call(s, mth, r, p);
+    const CallState st = ioStateToCallState(co_await g_sess->call(s, mth, r, p));
     if (us) *us = nowUs() - t0;
     if (resp) *resp = *p;
     co_return st;
@@ -216,10 +228,14 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t port, bool* conn
     }
 
     // ---- 3. 服务端错误码 ----
+    // repair: 这条原来断言 CallState::UNK_METHOD，但 RpcCode -> CallState 的映射（codeToState）
+    //   在 RPCClient::call 里，RPCSession::call 只负责把响应帧交出来、完全不解释 code，
+    //   所以在这一层拿不到 UNK_METHOD。这里改成断言传输层的事实：非 OK 的 code 也能完整收到帧。
+    //   code 映射本身要靠 RPCClient 的端到端测试覆盖（等 init() 的配置装载接上之后）。
     st = co_await callOnce("RaftRpc", "NoSuchMethod", "x", &resp, &us);
-    check(st == CallState::UNK_METHOD, "3. 服务端错误码映射 (UNK_METHOD)",
+    check(st == CallState::SUCCESS, "3. 非 OK 的 code 也能收到完整帧（code 映射在 RPCClient 层）",
           "state=" + std::to_string(static_cast<int>(st)) +
-              " (期望 2=UNK_METHOD)");
+              " (RPCSession 不做 RpcCode->CallState 映射)");
 
     // ---- 4. 1MB 大响应 ----
     // 注意：服务端只在 method == "Big" 时返回 1MB（写错方法名会退化成 echo，静默假通过）
@@ -254,6 +270,10 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t port, bool* conn
 // ============================== main ==============================
 
 int main() {
+    // std::_Exit 不刷新 stdio 缓冲 —— 输出重定向到文件时最后一段结果会整段丢失，这里关掉缓冲
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+
     uint16_t port = 0;
     const int lfd = listenOn(&port);
     if (lfd < 0) {
