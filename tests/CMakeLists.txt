@@ -12,6 +12,12 @@ target_link_libraries(rpcSessionTest PRIVATE KVStorageLib)
 add_executable(rpcClientTest rpc/rpcClientTest.cc)
 target_link_libraries(rpcClientTest PRIVATE KVStorageLib)
 
+# rpc 配置反序列化：FormatConversion 的各种畸形输入 + 走真实 ConfigManager 读 conf/rpc.json
+# 并真的建一个 RPCClient（KVRAFT_SRC_DIR 给测试定位仓库里的 conf/）
+add_executable(rpcConfigTest rpc/rpcConfigTest.cc)
+target_link_libraries(rpcConfigTest PRIVATE KVStorageLib)
+target_compile_definitions(rpcConfigTest PRIVATE KVRAFT_SRC_DIR="${CMAKE_SOURCE_DIR}")
+
 # 注意：rpc/peerConcurrencyTest.cc 是上一版（Peer 类）的测试，用的是已废弃的 API，
 #       没有登记在这里，所以不会被构建。要么适配到 RPCSession，要么删掉。
 

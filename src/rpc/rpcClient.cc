@@ -14,28 +14,6 @@ namespace RPC {
 
 static auto g_logger = M_SYLAR_LOG_NAME("craft");
 
-// RPC 调用超时。Raft 心跳 25ms、选举超时 300~500ms，
-// 所以取 100ms：既远小于选举超时，又给慢对端留了余量。
-static constexpr int kRpcTimeoutUs = 100 * 1000;
-
-// repair: 同一节点连续超时多少次，才把连接按"断了"处理（触发重连）。
-//   原来这个阈值是 5，但配的是 RPCClient 级的 atomic<size_t> m_timed_out —— 跨节点共享、
-//   成功也不清零。后果：进程累计 5 次超时之后，之后【任何一次】超时都被当成 CLOSED，
-//   一次网络抖动就能把一条健康连接拆掉。
-//   现在改成 per-node 的【连续】计数（SessionInfo::consecutive_timeouts）+ 成功归零，
-//   阈值 3：3 x 100ms = ~300ms 已经接近选举超时下限，再拖 leader 就没了。
-static constexpr int kTimeoutToDisconnectCount = 3;
-
-// repair: 重连的尝试上限与退避。
-//   原来是 `while (rt)` 无上限死循环，而且里面的 co_sleep(1) 单位是【毫秒】不是秒
-//   （hook.cc:249 `co_sleep(unsigned int seconds)  // msec`），所以对端拒连时这个协程
-//   以 ~1000 次/秒 的速率反复 CreateTCP + connect，永不退出，写注释的"间隔1s"跟实际差 1000 倍。
-//   现在封顶 kReconnectMaxAttempts 次、从 kReconnectBackoffMs 起指数退避、上限 kReconnectMaxBackoffMs，
-//   放弃后 state 保持 false —— call() 会立刻返回 RETRY 快速失败（不再白等 recv 超时），
-//   后续重试交给周期性的 coConnectAll()。
-static constexpr int kReconnectMaxAttempts = 3;
-static constexpr unsigned int kReconnectBackoffMs = 5;
-static constexpr unsigned int kReconnectMaxBackoffMs = 20;
 
 // repair: 服务端 code → 客户端 CallState 的映射（原来完全没做这层）
 static CallState codeToState(int code) {
@@ -114,8 +92,8 @@ RPCSession::RPCSession(m_sylar::Socket::ptr sock) : m_sylar::Session(sock) {
     //   一旦把逻辑值改大，recvMessage 就会往 1024 字节的堆块里写更多字节 → 堆溢出（实测段错误）。
     //   要放大 buffer 必须在【任何 Session 构造之前】改配置项
     //   servers.basic.limit.buffer_size（见本文件顶部的静态初始化）。
-    setRecvTimeOut(kRpcTimeoutUs);
-    setSendTimeOut(kRpcTimeoutUs);
+    setRecvTimeOut(kRpcTimeoutUs());
+    setSendTimeOut(kRpcTimeoutUs());
     m_state = SessionState::READY;
 }
 
@@ -232,7 +210,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvResponse(Frame& frame) {
     }
 
     // 数据接受并解析
-    size_t max_request_size = kMaxPayloadSize;
+    size_t max_request_size = kMaxPayloadSize();
     char* buffer = nullptr;     // 输出参数，指向接收数据的起始位置，不要对buffer进行delete操作
     size_t total_length = 0;      // 累计接收字节数
     while(true) {
@@ -352,12 +330,47 @@ int RPCClient::addPeer(const m_sylar::IPAddress::ptr& address) {
 }
 
 
-m_sylar::Task<int> RPCClient::init() {
+m_sylar::Task<int> RPCClient::init(const std::string& confPath, int configId, int selfId) {
     // 从配置装载所有连接信息
-    // TODO 配置装载：为每个 peer 调一次 addPeer(address)（它会把 m_infos / m_sessions
-    //      同步撑大、下标一一对应）。
-    //      顺带在起服务前把 servers.http.tcpserver.timeout.connect（默认 5000ms，
-    //      它才是 connect 真正生效的超时，见 coConnect 里的说明）改到 kRpcTimeoutUs 量级。
+    //   配置机制、FormatConversion 的写法、以及"ConfigVar 构造即快照"和"setConfig 是覆盖
+    //   不是合并"这两个坑，都在 rpcConfig.hpp 里说明了。
+    RpcDefine def;
+    if (loadRpcConfig(confPath, configId, def) != 0) {
+        // def.errmsg 里已经是具体原因，loadRpcConfig 也打过日志了
+        co_return -1;
+    }
+
+    if (selfId >= 0 && def.find(selfId) == nullptr) {
+        M_SYLAR_LOG_ERROR(g_logger) << "[rpc] selfId=" << selfId << " 不在配置的节点列表里（"
+                                    << confPath << "）";
+        co_return -1;
+    }
+    if (selfId < 0) {
+        M_SYLAR_LOG_WARN(g_logger) << "[rpc] 没有指定 selfId，会把配置里所有节点都当对端建连"
+                                      "（含自己！正常应该传 -i <selfId>）";
+    }
+
+    // 重复 init 幂等：先把上一轮的清掉，再按下标重建
+    m_infos.clear();
+    {
+        std::lock_guard<std::mutex> lk(m_sessions_mutex);
+        m_sessions.clear();
+    }
+
+    // 全部节点里把自己摘出去 —— 自己不跟自己建 rpc 连接
+    for (const auto& n : def.nodes) {
+        if (n.id == selfId) {
+            continue;
+        }
+        m_sylar::IPAddress::ptr addr = toAddress(n);
+        if (addr == nullptr) {      // ip 非法（getaddrinfo 解析不出来）
+            M_SYLAR_LOG_ERROR(g_logger) << "[rpc] 节点 " << n.id << " 的地址非法: " << n.ip;
+            co_return -1;
+        }
+        const int peerId = addPeer(addr);
+        M_SYLAR_LOG_INFO(g_logger) << "[rpc] peer[" << peerId << "] node=" << n.id
+                                   << " -> " << n.addr();
+    }
 
     // 尝试连接
     co_await coConnectAll();
@@ -365,7 +378,7 @@ m_sylar::Task<int> RPCClient::init() {
     //   所以这里的 READY 只表示"已发起连接"，不代表"已连上"。
     //   真正的可用性判断看 per-node 的 SessionInfo::state（call() 据此返回 RETRY）。
     m_state = State::READY;
-    co_return 0;
+    co_return static_cast<int>(m_infos.size());
 }
 
 
@@ -421,17 +434,20 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
         ~ReconnectingGuard() { flag.store(false); }
     } guard{info.reconnecting};
 
-    unsigned int backoff_ms = kReconnectBackoffMs;
-    for (int attempt = 0; attempt < kReconnectMaxAttempts; ++attempt) {
+    // 这几个从配置读一次就固定下来，免得循环中途配置被改掉、退避序列变得不可预期
+    const int maxAttempts = kReconnectMaxAttempts();
+    const unsigned int maxBackoffMs = kReconnectMaxBackoffMs();
+    unsigned int backoff_ms = kReconnectBackoffMs();
+    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
         // repair: 每次尝试都新建 socket。connect 失败的那个 socket 不可复用 ——
         //   框架里 connect 失败既不关 fd 也不重置 m_isConnected；这里靠下一轮的重新赋值
         //   把它析构掉（~Socket → IOManager::closeFd → CLOSE_TASK → co_close(fd)），fd 能收回来。
         m_sylar::Socket::ptr sock = m_sylar::Socket::CreateTCP(info.address);
-        // repair: 这里传进去的 kRpcTimeoutUs 其实【没被用到】—— m_sylar::Socket::connect
+        // repair: 这里传进去的 kRpcTimeoutUs() 其实【没被用到】—— m_sylar::Socket::connect
         //   (socket.cc:329) 直接 `co_connect(fd, addr, addrLen)`，把 timeOut 形参丢了。
         //   真正生效的是全局配置 servers.http.tcpserver.timeout.connect（默认 5000ms），
         //   所以对端 SYN 被 DROP 时这里会阻塞到那个值。要收紧只能在起服务前改那个配置项。
-        int rt = co_await sock->connect(info.address, kRpcTimeoutUs);
+        int rt = co_await sock->connect(info.address, kRpcTimeoutUs());
         if (rt == 0) {
             // 连接成功：整个替换掉旧的 RPCSession（旧对象由 shared_ptr 自然回收）
             auto session = std::make_shared<RPCSession>(sock);
@@ -445,16 +461,16 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
             info.state.store(true, std::memory_order_release);
             co_return 0;
         }
-        if (attempt + 1 < kReconnectMaxAttempts) {
+        if (attempt + 1 < maxAttempts) {
             co_await m_sylar::co_sleep(backoff_ms);
-            backoff_ms = std::min(backoff_ms * 2, kReconnectMaxBackoffMs);
+            backoff_ms = std::min(backoff_ms * 2, maxBackoffMs);
         }
     }
 
     // 放弃本轮。state 保持 false：call() 会立刻返回 RETRY 快速失败，不再白等一次 recv 超时；
     // 真正的重试交给周期性的 coConnectAll()。
     M_SYLAR_LOG_WARN(g_logger) << "[rpc] reconnect 放弃, peer " << id
-                               << ", 尝试 " << kReconnectMaxAttempts << " 次均失败";
+                               << ", 尝试 " << maxAttempts << " 次均失败";
     co_return -1;
 }
 
@@ -498,7 +514,7 @@ m_sylar::Task<CallState> RPCClient::call(int node_id,
     if (st == m_sylar::IOState::TIMEOUT) {
 
         const int n = info.consecutive_timeouts.fetch_add(1) + 1;
-        if (n >= kTimeoutToDisconnectCount) {
+        if (n >= kTimeoutToDisconnectCount()) {
             st = m_sylar::IOState::CLOSED;      // 连续超时过多，解释为断开
         }
     }

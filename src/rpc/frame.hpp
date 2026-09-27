@@ -7,18 +7,22 @@
 
 #include <sylar/basic/config.h>
 
+#include "rpcConfig.hpp"
+
 /**
  * @brief  帧解析与构建
  */
 namespace craft {
 namespace RPC {
 
-/// 帧长度头大小
-inline const size_t kLengthFieldSize =
-    m_sylar::ConfigManager::LookUp("rpc.head_length", 4, 1)->getValue();
-/// 单帧载荷上限
-inline const size_t kMaxPayloadSize =
-    m_sylar::ConfigManager::LookUp("rpc.max_frame_payload_size", 67108864, 1)->getValue();
+// repair: kLengthFieldSize / kMaxPayloadSize 原来就是这里的两个
+//   `inline const size_t x = ConfigManager::LookUp(...)->getValue();` —— 那是纯静态快照：
+//   LookUp 返回的临时 shared_ptr 在语句结束时当场析构、监听器被摘掉，值就冻结在
+//   static 初始化那一刻（= 代码里的默认值），配置文件根本管不到它。
+//   现在这两项和别的可调项一起挪进 rpcConfig.hpp，从 conf/rpc.json 读、走访问函数取：
+//   用 kLengthFieldSize() / kMaxPayloadSize()。名字从"常量"变成"函数"是故意的 ——
+//   让"这已经是运行期配置、不是编译期常量"这件事在调用点上看得到。
+//   ★ kLengthFieldSize 是线上协议的一部分，改了必须两端一起改。
 
 /**
  * @brief RPC 调用协议帧

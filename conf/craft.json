@@ -1,6 +1,0 @@
-{
-"rpc" : {
-    "max_frame_payload_size" : 67108864,
-    "head_length" : 4
-  }
-}

@@ -1,19 +1,29 @@
 {
-"peers" : [
+  "peers" : [
     {
-        "id" : 1,
-        "ip" : "127.0.0.1",
-        "port" : 8808
+      "id" : 0,
+      "ip" : "127.0.0.1",
+      "port" : 8808
     },
     {
-        "id" : 2,
-        "ip" : "127.0.0.1",
-        "port" : 8809
+      "id" : 1,
+      "ip" : "127.0.0.1",
+      "port" : 8809
     },
     {
-        "id" : 3,
-        "ip" : "127.0.0.1",
-        "port" : 8810
+      "id" : 2,
+      "ip" : "127.0.0.1",
+      "port" : 8810
     }
-]
+  ],
+
+  "kLengthFieldSize" : 4,
+  "kMaxPayloadSize" : 67108864,
+
+  "kRpcTimeoutUs" : 100000,
+  "kTimeoutToDisconnectCount" : 3,
+
+  "kReconnectMaxAttempts" : 3,
+  "kReconnectBackoffMs" : 5,
+  "kReconnectMaxBackoffMs" : 20
 }

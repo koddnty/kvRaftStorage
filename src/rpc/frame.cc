@@ -42,7 +42,7 @@ void Frame::setData(const std::string& buffer) {
 
 std::string Frame::toWire() const {
     std::string out;
-    out.reserve(kLengthFieldSize + m_payload.size());
+    out.reserve(kLengthFieldSize() + m_payload.size());
     appendLengthBE(&out, static_cast<uint32_t>(m_payload.size()));
     out.append(m_payload);
     return out;

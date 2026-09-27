@@ -21,14 +21,14 @@ size_t Parser::parse(const char* buffer, size_t size) {
         }
 
         // ---- 1) 收长度头（4 字节）----
-        if (m_length_buffer.size() < kLengthFieldSize) {
+        if (m_length_buffer.size() < kLengthFieldSize()) {
             m_state = State::HEADER;
-            const size_t need = kLengthFieldSize - m_length_buffer.size();
+            const size_t need = kLengthFieldSize() - m_length_buffer.size();
             const size_t take = std::min(need, size - idx);
             m_length_buffer.append(buffer + idx, take);  // ★ append(ptr, len)
             idx += take;
 
-            if (m_length_buffer.size() < kLengthFieldSize) {
+            if (m_length_buffer.size() < kLengthFieldSize()) {
                 break;  // 长度头还没凑齐，等下次
             }
             // ★ 必须【凑齐 4 字节之后】才解析，否则会解出垃圾长度
@@ -69,7 +69,7 @@ Frame::ptr Parser::popFrame() {
 }
 
 bool Parser::parseHeader() {
-    if (m_length_buffer.size() != kLengthFieldSize) {
+    if (m_length_buffer.size() != kLengthFieldSize()) {
         return false;
     }
     // 按【网络序/大端】还原长度。
@@ -80,7 +80,7 @@ bool Parser::parseHeader() {
     const uint32_t len = (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
                          (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
 
-    if (len > kMaxPayloadSize) {
+    if (len > kMaxPayloadSize()) {
         m_payload_length = 0;
         return false;  // 触发 BADFRAME，避免恶意长度头撑爆内存
     }

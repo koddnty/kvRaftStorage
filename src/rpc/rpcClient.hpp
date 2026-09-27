@@ -15,6 +15,7 @@
 #include "frame.hpp"
 #include "parser.hpp"
 #include "payload.pb.h"
+#include "rpcConfig.hpp"
 #include <sylar/basic/lock.hpp>
 
 /**
@@ -55,15 +56,7 @@ enum class SessionState {
     ERROR           // 发生错误
 };      // 节点状态
 
-// repair: co_sendRequest / co_recvResponse 的返回值说明（沿用 m_sylar::IOState）。
-//
-//   粒度问题不在枚举，而在【填得不够细】：原来这两个函数实际只会产生 SUCCESS / FAILED 两种
-//     · co_sendRequest ：EPIPE 和普通错误都返回 FAILED，从不产生 TIMEOUT / CLOSED
-//     · co_recvResponse：只有 recv_len==0 才返回 CLOSED，ETIMEDOUT 之外的连接错误
-//                        （ECONNRESET / EPIPE）全被压成 FAILED
-//   于是上层拿到 FAILED 时分不清是"连接断了"、"只是这次慢了"、还是"帧协议错位"。
-//
-//   现在按 IOState 已有的值填准：
+
 //     SUCCESS —— 成功
 //     TIMEOUT —— 等数据超时(errno=ETIMEDOUT)：对端可能只是慢，也可能半开连接
 //     CLOSED  —— 连接/字节流已不可用，需要重建连接：
@@ -157,13 +150,27 @@ public:
     };
 
     /**
-     * @brief 初始化客户端
+     * @brief 初始化客户端：读配置文件 → 反序列化 → 建连
+     *
+     *   走的就是 m_sylar 日志模块那一套（ConfigManager::LoadJson +
+     *   ConfigManager::LookUp<RpcDefine> + FormatConversion<nlohmann::json, RpcDefine>），
+     *   细节和两个坑都写在 rpcConfig.hpp 里了。
+     *
+     *   配置里的 nodes 是【集群全部节点，含自己】：除了 selfId 那个，其余每个都会
+     *   addPeer() 建一条连接。selfId 通常来自命令行（-i <selfId>），
+     *   三个节点因此可以共用同一份配置文件。
+     *
+     * @param confPath  配置文件路径，空串表示不读文件（此时 peers 为空，必然失败）
+     * @param configId  该文件对应的 config_id（见 kRpcConfId 的说明）
+     * @param selfId    自己在这个集群里的 id；<0 表示不指定（会把所有节点都当对端，含自己）
+     * @return 成功返回 peer 数量（>= 0），配置错误返回 -1
      */
-    m_sylar::Task<int> init();
+    m_sylar::Task<int> init(const std::string& confPath = kRpcConfPath,
+                            int configId = kRpcConfId,
+                            int selfId = -1);
     m_sylar::Task<int> coConnectAll();      // 连接或重连
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> coConnectTask(int id);
     m_sylar::Task<int> coConnect(int id );
-
     /**
      *  @brief 加一个 peer（配置装载用），返回它的 node id（= 加入顺序，从 0 开始）
      *  repair: 原来 m_infos / m_sessions 没有任何填充入口（init() 里的配置装载一直是 TODO），
