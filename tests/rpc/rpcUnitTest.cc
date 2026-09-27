@@ -37,7 +37,7 @@ std::vector<RPC::Frame::ptr> feedInChunks(RPC::Parser& parser, const std::string
         n = std::min(n, data.size() - pos);
         parser.parse(data.data() + pos, n);
         pos += n;
-        while (auto f = parser.getFrame()) out.push_back(f);
+        while (auto f = parser.popFrame()) out.push_back(f);
     }
     return out;
 }
@@ -116,9 +116,14 @@ TEST_CASE("Frame setData 与拷贝语义", "[rpc][frame]") {
         CHECK(f.payload() == "abc");
     }
 
-    SECTION("setData 从 string 取前 size 字节") {
+    SECTION("setData 从 string 设置载荷") {
         RPC::Frame f;
-        f.setData(std::string("abcdef"), 3);
+        f.setData(std::string("abcdef"));
+        CHECK(f.payload() == "abcdef");
+    }
+
+    SECTION("截取构造：只取前 length 字节") {
+        RPC::Frame f(std::string("abcdef"), 3);
         CHECK(f.payload() == "abc");
     }
 
@@ -166,10 +171,10 @@ TEST_CASE("Parser 完整帧往返", "[rpc][parser]") {
 
     CHECK(used == wire.size());
 
-    auto frame = parser.getFrame();
+    auto frame = parser.popFrame();
     REQUIRE(frame != nullptr);
     CHECK(frame->payload() == payload);
-    CHECK(parser.getFrame() == nullptr);   // 只产出一帧
+    CHECK(parser.popFrame() == nullptr);   // 只产出一帧
 }
 
 TEST_CASE("Parser 半包重组", "[rpc][parser]") {
@@ -188,12 +193,12 @@ TEST_CASE("Parser 半包重组", "[rpc][parser]") {
     SECTION("长度头只到了 2 字节时不产出帧") {
         RPC::Parser parser;
         CHECK(parser.parse(wire.data(), 2) == 2);
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
         CHECK(parser.state() == RPC::Parser::State::HEADER);
 
         // 补齐剩下的
         parser.parse(wire.data() + 2, wire.size() - 2);
-        auto frame = parser.getFrame();
+        auto frame = parser.popFrame();
         REQUIRE(frame != nullptr);
         CHECK(frame->payload() == payload);
     }
@@ -201,11 +206,11 @@ TEST_CASE("Parser 半包重组", "[rpc][parser]") {
     SECTION("载荷分两段到达") {
         RPC::Parser parser;
         parser.parse(wire.data(), 20);                       // 长度头 + 部分载荷
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
         CHECK(parser.state() == RPC::Parser::State::PAYLOAD);
 
         parser.parse(wire.data() + 20, wire.size() - 20);
-        auto frame = parser.getFrame();
+        auto frame = parser.popFrame();
         REQUIRE(frame != nullptr);
         CHECK(frame->payload() == payload);
     }
@@ -240,16 +245,16 @@ TEST_CASE("Parser 粘包", "[rpc][parser]") {
 
         CHECK(parser.parse(all) == all.size());
 
-        auto f1 = parser.getFrame();
-        auto f2 = parser.getFrame();
-        auto f3 = parser.getFrame();
+        auto f1 = parser.popFrame();
+        auto f2 = parser.popFrame();
+        auto f3 = parser.popFrame();
         REQUIRE(f1 != nullptr);
         REQUIRE(f2 != nullptr);
         REQUIRE(f3 != nullptr);
         CHECK(f1->payload() == a);
         CHECK(f2->payload() == b);
         CHECK(f3->empty());
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
     }
 
     SECTION("4 条帧但最后一条只到一半") {
@@ -261,7 +266,7 @@ TEST_CASE("Parser 粘包", "[rpc][parser]") {
         CHECK(used == 3 * wire.size() + 6);   // 半条不消费
 
         int count = 0;
-        while (parser.getFrame()) ++count;
+        while (parser.popFrame()) ++count;
         CHECK(count == 3);
     }
 }
@@ -279,7 +284,7 @@ TEST_CASE("Parser 非法帧", "[rpc][parser]") {
 
         CHECK(parser.hasError());
         CHECK(parser.state() == RPC::Parser::State::BADFRAME);
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
     }
 
     SECTION("BADFRAME 后不再消费数据") {
@@ -292,7 +297,7 @@ TEST_CASE("Parser 非法帧", "[rpc][parser]") {
 
         // 再喂合法数据也不消费
         CHECK(parser.parse(makeWire("abc")) == 0);
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
     }
 
     SECTION("clearState 后可复用") {
@@ -308,7 +313,7 @@ TEST_CASE("Parser 非法帧", "[rpc][parser]") {
 
         const std::string wire = makeWire("abc");
         CHECK(parser.parse(wire) == wire.size());
-        auto frame = parser.getFrame();
+        auto frame = parser.popFrame();
         REQUIRE(frame != nullptr);
         CHECK(frame->payload() == "abc");
     }
@@ -319,7 +324,7 @@ TEST_CASE("Parser 边界输入", "[rpc][parser]") {
         RPC::Parser parser;
         CHECK(parser.parse(nullptr, 0) == 0);
         CHECK(parser.parse(std::string()) == 0);
-        CHECK(parser.getFrame() == nullptr);
+        CHECK(parser.popFrame() == nullptr);
     }
 
     SECTION("大载荷 1MB") {
@@ -328,7 +333,7 @@ TEST_CASE("Parser 边界输入", "[rpc][parser]") {
         const std::string wire = makeWire(payload);
 
         CHECK(parser.parse(wire) == wire.size());
-        auto frame = parser.getFrame();
+        auto frame = parser.popFrame();
         REQUIRE(frame != nullptr);
         CHECK(frame->size() == payload.size());
         CHECK(frame->payload() == payload);

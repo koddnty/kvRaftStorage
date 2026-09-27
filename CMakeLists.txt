@@ -10,17 +10,19 @@ file(GLOB_RECURSE ALL_SOURCES "src/*.cc")
 list(REMOVE_ITEM ALL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 
 # 项目依赖
+find_package(Protobuf REQUIRED)         # ★ payload.pb.cc 要用，之前没链上只是没被引用到
 find_package(yaml-cpp REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
-find_library(MARIADB_LIB mariadb /usr/local/lib/mariadb)
-find_library(HIREDIS_LIB hiredis /usr/local/lib)
-find_library(SYLAR_LIB sylar /usr/local/lib)
+find_library(MARIADB_LIB NAMES mariadb PATHS /usr/local/lib/mariadb REQUIRED)
+find_library(HIREDIS_LIB NAMES hiredis PATHS /usr/local/lib REQUIRED)
+find_library(SYLAR_LIB   NAMES sylar   PATHS /usr/local/lib REQUIRED)
 find_package(CURL REQUIRED)
 
 set (LIB_LIB
     pthread
     dl
+    protobuf::libprotobuf               # ★
     yaml-cpp::yaml-cpp
     OpenSSL::SSL
     OpenSSL::Crypto
@@ -34,6 +36,7 @@ set (LIB_LIB
 add_library(KVStorageLib STATIC ${ALL_SOURCES})
 target_include_directories(KVStorageLib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${Protobuf_INCLUDE_DIRS}
     /usr/local/include/sylar
 )
 target_link_libraries(KVStorageLib PUBLIC ${LIB_LIB})

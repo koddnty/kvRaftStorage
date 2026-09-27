@@ -22,7 +22,7 @@ int main() {
     const size_t used = parser.parse(wire);
     assert(used == wire.size());
 
-    RPC::Frame::ptr output = parser.getFrame();
+    RPC::Frame::ptr output = parser.popFrame();
     if (output == nullptr) {
         std::cerr << "解析失败：没有取到完整帧\n";
         return 1;

@@ -24,6 +24,7 @@ namespace RPC {
  */
 class Parser {
 public:
+    using ptr = std::shared_ptr<Parser>;
     /**
      * @brief 喂入数据并解析出尽可能多的完整帧（一次喂入多条也能全部产出）
      * @return 实际消费的字节数（调用方应从 buffer 头部丢弃这么多）
@@ -31,8 +32,8 @@ public:
     size_t parse(const std::string& buffer);
     size_t parse(const char* buffer, size_t size);
 
-    /// 取出一帧；队列为空返回 nullptr
-    Frame::ptr getFrame();
+    /// 取出一帧并删除对应帧
+    Frame::ptr popFrame();
 
     enum class State {
         READY = 0,    // 一帧刚就绪（瞬时状态）
@@ -41,8 +42,11 @@ public:
         BADFRAME = 3  // 帧损坏（长度非法），调用方应关闭连接
     };
 
-    State state() const { return m_state; }
-    bool hasError() const { return m_state == State::BADFRAME; }
+    [[nodiscard]] inline bool empty() const {return m_parsed_frames.empty();}
+
+
+    [[nodiscard]] State state() const { return m_state; }
+    [[nodiscard]] bool hasError() const { return m_state == State::BADFRAME; }
 
     /// 清空所有中间状态（连接复用时调用）
     void clearState();

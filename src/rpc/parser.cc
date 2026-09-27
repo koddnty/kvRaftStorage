@@ -59,7 +59,7 @@ size_t Parser::parse(const char* buffer, size_t size) {
     return idx;
 }
 
-Frame::ptr Parser::getFrame() {
+Frame::ptr Parser::popFrame() {
     if (m_parsed_frames.empty()) {
         return nullptr;
     }

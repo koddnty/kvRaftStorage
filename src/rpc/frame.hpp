@@ -63,7 +63,7 @@ public:
     /// 设置载荷（从原始内存，取前 size 字节）
     void setData(const char* buffer, size_t size);
     /// 设置载荷（从 string，取前 size 字节）
-    void setData(const std::string& buffer, size_t size);
+    void setData(const std::string& buffer);
 
 private:
     std::string m_payload;

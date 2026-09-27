@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package craft.RPC;
+
+message Request {
+  int32 id = 1;
+  string service = 2;
+  string method = 3;
+   bytes data = 4;
+}
+
+message Response {
+  int32 id = 1;
+  int32  code   = 2;
+  string errmsg = 3;
+  bytes  data = 4;
+}

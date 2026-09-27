@@ -36,8 +36,8 @@ void Frame::setData(const char* buffer, size_t size) {
     m_payload.assign(buffer, size);
 }
 
-void Frame::setData(const std::string& buffer, size_t size) {
-    m_payload.assign(buffer, 0, std::min(size, buffer.size()));
+void Frame::setData(const std::string& buffer) {
+    m_payload.assign(buffer, 0, buffer.size());
 }
 
 std::string Frame::toWire() const {
