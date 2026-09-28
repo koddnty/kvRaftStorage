@@ -178,6 +178,17 @@ static m_sylar::Task<CallState> callOnce(const std::string& service, const std::
     co_return st;
 }
 
+// 用例 7 用的 A 侧调用：服务端不回，所以它会一直占着 m_recv_mutex 直到自己超时。
+// 用【具名自由函数】而不是 lambda —— 前面已经被 lambda 协程的 stack-use-after-return 咬过一次。
+static CallState g_stateA = CallState::SUCCESS;
+static uint64_t g_usA = 0;
+static std::string g_respA;
+
+static m_sylar::Task<void, m_sylar::TaskBeginExecuter> callA() {
+    g_stateA = co_await callOnce("RaftRpc", "Hang", "x", &g_respA, &g_usA);
+    co_return;
+}
+
 m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t port, bool* connected) {
     // ---- 建连：必须用 co_connect（Socket::connect 在 m_sylar 里不可用）----
     auto addr = std::dynamic_pointer_cast<m_sylar::IPv4Address>(
@@ -264,6 +275,29 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t port, bool* conn
           "slow_state=" + std::to_string(static_cast<int>(slowState)) +
               " next_state=" + std::to_string(static_cast<int>(st)) + " resp=" + resp);
 
+    // ---- 7. 并发在途：抢到 m_recv_mutex 之后必须【先去缓存里拿】 ----
+    //   A 先发一个服务端永远不回的 Hang，于是 A 会一直占着 m_recv_mutex 等自己的 id。
+    //   紧接着 B 发一个正常请求：B 的响应会被 A 从 socket 读出来、缓存进 m_recved_frames，
+    //   而此时 B 正阻塞在 m_recv_mutex 上。等 A 超时放开锁，B 应该【立刻】从缓存里拿到答案。
+    //   如果 co_recvResponse 抢到锁之后不重新查一次缓存、直接闷头 recvMessage，
+    //   B 就会白等一个完整的 100ms recv 超时，最后错误地报 TIMEOUT ——
+    //   而 RPCClient::call 那边连续 3 次超时就会被当成"连接断了"去重连，连锁反应。
+    {
+        m_sylar::IOManager::getInstance()->schedule(m_sylar::TaskCoro20::create_coro(&callA));
+        // 等 A 把请求发出去、进到 recvMessage（此时它已经持有 m_recv_mutex）
+        co_await m_sylar::co_sleep(30);
+
+        uint64_t us_B = 0;
+        const CallState st_B = co_await callOnce("RaftRpc", "AppendEntries", "inflight", &resp, &us_B);
+        check(st_B == CallState::SUCCESS && resp == "echo:inflight",
+              "7. \xe2\x98\x85 并发在途：抢到锁后先从缓存取，不能白等一次 recv 超时",
+              "B: state=" + std::to_string(static_cast<int>(st_B)) + " resp=" + resp +
+                  " us=" + std::to_string(us_B) + " | A: state=" +
+                  std::to_string(static_cast<int>(g_stateA)) + " us=" + std::to_string(g_usA) +
+                  "（B 的响应早就在缓存里了，应该在 A 放开锁的瞬间返回；"
+                  "如果 us≈200000 且 state=TIMEOUT 就是这个 bug）");
+    }
+
     co_return;
 }
 
@@ -290,7 +324,7 @@ int main() {
 
     // 等全部用例跑完（最多 10s）
     for (int i = 0; i < 200; ++i) {
-        if (connected && (g_pass + g_fail) >= 6) break;
+        if (connected && (g_pass + g_fail) >= 7) break;
         ::usleep(50 * 1000);
     }
 

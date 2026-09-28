@@ -16,7 +16,7 @@
 #include "parser.hpp"
 #include "payload.pb.h"
 #include "rpcConfig.hpp"
-#include <sylar/basic/lock.hpp>
+#include "rpcSession.hpp"
 
 /**
  * 实现rpc客户端
@@ -47,15 +47,6 @@ enum class RpcCode : int {
     UNK_METHOD  = 1003,     // 该 service 下没有这个 method
     INTERNAL    = 1004,     // 服务端处理时内部错误
 };
-
-enum class SessionState {
-    INITING,        // 没初始化
-    READY,          // 可用
-    BUSY,           // 被占用，繁忙
-    OFFLINE,        // 离线（超时，退出等状态）
-    ERROR           // 发生错误
-};      // 节点状态
-
 
 //     SUCCESS —— 成功
 //     TIMEOUT —— 等数据超时(errno=ETIMEDOUT)：对端可能只是慢，也可能半开连接
@@ -97,43 +88,6 @@ public:
 // 前向声明
 class RPCClient;
 
-class RPCSession : public m_sylar::Session {
-public:
-    using ptr = std::shared_ptr<RPCSession>;
-    RPCSession(m_sylar::Socket::ptr sock);
-    ~RPCSession();
-
-    // repair: 删掉了 RPCSession::reConnect()。它已经没有任何调用点（重连改成在 RPCClient
-    //   层整个替换 RPCSession 对象了），而且函数体用的是 getSocket()->close() ——
-    //   m_sylar::Socket::close() 里 co_close(fd) 是被注释掉的，只注销 epoll 事件不真关 fd，
-    //   留着会误导。要重连请用 RPCClient::coConnect(id)。
-
-    // 对当前节点调用方法
-    m_sylar::Task<m_sylar::IOState> call(std::shared_ptr<std::string> service,   // 服务
-                                  std::shared_ptr<std::string> method,    // 方法
-                                  std::shared_ptr<std::string> req_bytes,
-                                  std::shared_ptr<std::string> resp_bytes);
-
-    // 返回值仍是 m_sylar::IOState，只是填得更细（见文件开头说明）
-    m_sylar::Task<m_sylar::IOState> co_sendRequest(const Frame& frame);
-    m_sylar::Task<m_sylar::IOState> co_recvResponse(Frame& frame);
-
-    // repair: 原来 node_id 恒为 0 且没有任何赋值入口，日志里永远是 "Peer 0"，排查时会误导
-    void setNodeId(int id) { node_id = id; }
-    [[nodiscard]] int getNodeId() const { return node_id; }
-
-    void setAddress(const m_sylar::IPv4Address& address) const;
-
-private:
-    SessionState m_state {SessionState::INITING};
-    int node_id {-1};            // repair: 原来初始化为 0（0 是合法 id，无法区分"未设置"）
-    int m_request_id {0};        // 请求id,用于分离请求与响应
-
-    std::shared_ptr<m_sylar::IPv4Address> m_address = std::make_shared<m_sylar::IPv4Address>();     // 对端地址
-
-    Parser::ptr m_parser{std::make_shared<Parser>()};
-    m_sylar::CoMutex m_mutex;
-};
 
 
 
