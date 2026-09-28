@@ -130,13 +130,17 @@ inline m_sylar::ConfigVar<unsigned int>::ptr g_kReconnectMaxBackoffMs =
     m_sylar::ConfigManager::LookUp<unsigned int>("kReconnectMaxBackoffMs", 20, kRpcConfId,
                                                  "重连退避上限(ms)");
 
+inline m_sylar::ConfigVar<int64_t>::ptr g_kServerRecvTimeout =
+    m_sylar::ConfigManager::LookUp<int64_t>("kServerRecvTimeout", 30000000, kRpcConfId,
+                                                 "服务端接收超us");
 /// 取值统一走这几个函数（原因见上面那段说明）
-inline size_t       kLengthFieldSize()            { return g_kLengthFieldSize->getValue(); }
-inline size_t       kMaxPayloadSize()             { return g_kMaxPayloadSize->getValue(); }
-inline int64_t      kRpcTimeoutUs()               { return g_kRpcTimeoutUs->getValue(); }
-inline int          kTimeoutToDisconnectCount()   { return g_kTimeoutToDisconnectCount->getValue(); }
-inline unsigned int kReconnectBackoffMs()         { return g_kReconnectBackoffMs->getValue(); }
-inline unsigned int kReconnectMaxBackoffMs()      { return g_kReconnectMaxBackoffMs->getValue(); }
+inline size_t       kLengthFieldSize()              { return g_kLengthFieldSize->getValue(); }
+inline size_t       kMaxPayloadSize()               { return g_kMaxPayloadSize->getValue(); }
+inline int64_t      kRpcTimeoutUs()                 { return g_kRpcTimeoutUs->getValue(); }
+inline int          kTimeoutToDisconnectCount()     { return g_kTimeoutToDisconnectCount->getValue(); }
+inline unsigned int kReconnectBackoffMs()           { return g_kReconnectBackoffMs->getValue(); }
+inline unsigned int kReconnectMaxBackoffMs()        { return g_kReconnectMaxBackoffMs->getValue(); }
+inline int64_t      kServerRecvTimeout()            { return g_kServerRecvTimeout->getValue(); }
 /// 尝试次数至少为 1：配置里写 0 或负数时别退化成"永远不重连"
 inline int          kReconnectMaxAttempts() {
     const int v = g_kReconnectMaxAttempts->getValue();

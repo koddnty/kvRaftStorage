@@ -37,16 +37,16 @@ enum class CallState {
     SUCCESS
 };      // call响应状态
 
-// repair: 服务端响应码，对应 Request/Response 的 code 字段。
-//         原来客户端从不检查 code → 服务端的错误（无此 service / method）传不回客户端。
-//         服务端 RPCServer 实现时也用这套值，两边必须一致。
-enum class RpcCode : int {
-    OK          = 0,        // 成功
-    BAD_REQUEST = 1001,     // 请求体解析失败
-    UNK_SERVICE = 1002,     // 服务端没有注册这个 service
-    UNK_METHOD  = 1003,     // 该 service 下没有这个 method
-    INTERNAL    = 1004,     // 服务端处理时内部错误
-};
+// 服务端 code → 客户端 CallState 的映射
+static CallState codeToState(int code) {
+    switch (static_cast<RpcCode>(code)) {
+    case RpcCode::OK:          return CallState::SUCCESS;
+    case RpcCode::UNK_SERVICE: return CallState::UNK_SERVICE;
+    case RpcCode::UNK_METHOD:  return CallState::UNK_METHOD;
+    case RpcCode::BAD_REQUEST: return CallState::UNK_REQBYTES;
+    default:                   return CallState::FAILED;
+    }
+}
 
 //     SUCCESS —— 成功
 //     TIMEOUT —— 等数据超时(errno=ETIMEDOUT)：对端可能只是慢，也可能半开连接

@@ -25,5 +25,7 @@
 
   "kReconnectMaxAttempts" : 3,
   "kReconnectBackoffMs" : 5,
-  "kReconnectMaxBackoffMs" : 20
+  "kReconnectMaxBackoffMs" : 20,
+
+  "kServerRecvTimeout": 30000000
 }

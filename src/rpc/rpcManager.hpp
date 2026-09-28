@@ -22,13 +22,13 @@ public:
         
     }
 
-    RPCServer::ptr getServer() { return m_server; }
+    RPC::RPCServer::ptr getServer() { return m_server; }
     RPC::RPCClient::ptr getClient() { return m_client; }    // ★ RPCClient 在 craft::RPC 里
 
 private:
     bool m_inited{false};
     RPC::RPCClient::ptr m_client;
-    RPCServer::ptr m_server;
+    RPC::RPCServer::ptr m_server;
 };
 
 }  // namespace craft
