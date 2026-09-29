@@ -43,7 +43,7 @@ namespace RPC {
 /// conf/rpc.json —— rpc 模块的全部配置都在这一个文件里
 inline constexpr const char* kRpcConfPath = "conf/rpc.json";
 /// 该文件使用的 config_id（★ 一个 id 只能装一个文件，见上面坑 2）
-inline constexpr int kRpcConfId = 2;
+
 /// 节点列表在文件里的路径（getJsonValueByPath 用点分隔；支持 "a.b.0.c" 这种数组下标）
 inline constexpr const char* kRpcNodesPath = "peers";
 
@@ -102,6 +102,7 @@ m_sylar::IPAddress::ptr toAddress(const NodeDefine& node);
 //   正常路径 RPCClient::init() 里是先 loadRpcConfig() 再建连，所以没问题；
 //   绕过 init() 直接裸用 Frame/Parser/RPCSession 的地方（单元测试）拿到的是默认值。
 // ---------------------------------------------------------------------------
+inline constexpr int kRpcConfId = 2;
 inline m_sylar::ConfigVar<size_t>::ptr g_kLengthFieldSize =
     m_sylar::ConfigManager::LookUp<size_t>("kLengthFieldSize", 4, kRpcConfId,
                                            "帧长度头字节数（★ 线上协议，两端必须一致）");

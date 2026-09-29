@@ -141,13 +141,12 @@ static CallState ioStateToCallState(m_sylar::IOState st) {
 
 static m_sylar::Task<CallState> callOnce(const std::string& service, const std::string& method,
                                          const std::string& req, std::string* resp, uint64_t* us) {
-    auto s = std::make_shared<std::string>(service);
-    auto mth = std::make_shared<std::string>(method);
     auto r = std::make_shared<std::string>(req);
     auto p = std::make_shared<std::string>();
 
     const uint64_t t0 = nowUs();
-    const CallState st = ioStateToCallState(co_await g_sess->call(s, mth, r, p));
+    // repair: service / method 参数改成 const std::string& 了，这里直接把形参透传即可
+    const CallState st = ioStateToCallState(co_await g_sess->call(service, method, r, p));
     if (us) *us = nowUs() - t0;
     if (resp) *resp = *p;
     co_return st;

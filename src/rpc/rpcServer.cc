@@ -6,6 +6,25 @@ static auto g_logger = M_SYLAR_LOG_NAME("craft");
 
 
 // RPC server ----------------------------------------------------
+m_sylar::Task<int> RPCServer::init(RpcDefine define, int node_id) {
+    const NodeDefine* def = define.find(node_id);
+    if (def == nullptr) {
+        M_SYLAR_LOG_ERROR(g_logger) << "node id " << node_id << " does not exist in rpc defins";
+        co_return -1;
+    }
+    else {
+        // bind并初始化
+        m_node_id = node_id;
+        uint16_t port = def->port;
+        m_sylar::Address::ptr addr = m_sylar::Address::LookupAnyIPAddress(def->ip);
+        std::dynamic_pointer_cast<m_sylar::IPv4Address>(addr)->setPort(port);
+        bind(addr);
+        start();        // 启动
+    }
+    co_return 0;
+}
+
+
 bool RPCServer::start() {
     // repair: 原来是 `m_iomanager = IOManager::getInstance();` + 遍历派生的 m_sockets ——
     //   那个 m_sockets 是空的（bind() 填的是基类那个，见 rpcServer.hpp 里的说明），
@@ -48,7 +67,6 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RPCServer::startAccept(m_sylar::
         else {
             if(errno == ETIMEDOUT)
             {   // 监听fd等待超时, 无新连接, 循环重新accept
-                M_SYLAR_LOG_DEBUG(g_logger) << "accept timeout, no pending connection, sockfd : " << sock->getFd();
             }
             else
             {

@@ -39,6 +39,7 @@
 #include "rpc/frame.hpp"
 #include "rpc/payload.pb.h"
 #include "rpc/rpcClient.hpp"
+#include "rpc/rpcConfig.hpp"
 #include "rpc/rpcServer.hpp"
 
 using namespace craft::RPC;
@@ -127,13 +128,12 @@ static m_sylar::IPv4Address::ptr mkAddr(uint16_t port) {
 // 发一次调用并记录耗时
 static m_sylar::Task<CallState> doCall(int node, const std::string& method,
                                        const std::string& body, std::string* resp, uint64_t* us) {
-    auto s = std::make_shared<std::string>("RaftRpc");
-    auto mth = std::make_shared<std::string>(method);
     auto r = std::make_shared<std::string>(body);
     auto p = std::make_shared<std::string>();
 
     const uint64_t t0 = nowUs();
-    const CallState st = co_await g_client->call(node, s, mth, r, p);
+    // repair: service / method 改成 const std::string& 了，直接传字面量/形参
+    const CallState st = co_await g_client->call(node, "RaftRpc", method, r, p);
     if (us) *us = nowUs() - t0;
     if (resp) *resp = *p;
     co_return st;
@@ -154,11 +154,23 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
     server->start();
 
     // ---------- 1. 正常建连 + 往返 ----------
-    const int idUp = g_client->addPeer(mkAddr(serverPort));     // 0 = 真服务端
-    const int idDown = g_client->addPeer(mkAddr(deadPort));     // 1 = 没有任何 listener
-    check(idUp == 0 && idDown == 1,
-          "1a. addPeer 分配 node id（0=真服务端, 1=死端口）",
-          "idUp=" + std::to_string(idUp) + " idDown=" + std::to_string(idDown));
+    // repair: RPCClient::call 现在开头加了 `if (m_state != State::READY) return FAILED`，
+    //   而 m_state 只有在 init() 里才会变成 READY。所以这里改成走真实启动路径：
+    //   组一份 RpcDefine（自己是 id 0，两个对端分别是真服务端和死端口），由 init() 去 addPeer。
+    //   以前那样手调 addPeer 现在会让每次 call 直接 FAILED。
+    //   注意 selfId 必须选【被摘掉的那个】，剩下的两个才是真对端 —— 一开始写成 selfId=2
+    //   就把死端口当成了自己，两个 peer 都指向真服务端，2a/2b/2c 全过不了。
+    RpcDefine def;
+    def.nodes = {
+        NodeDefine{0, "127.0.0.1", serverPort},     // 自己（selfId=0）：init 会摘掉，不会被连
+        NodeDefine{1, "127.0.0.1", serverPort},     // peer 0 = 真服务端
+        NodeDefine{2, "127.0.0.1", deadPort},       // peer 1 = 没有任何 listener
+    };
+    const int peers = co_await g_client->init(def, /*selfId=*/0);
+    const int idUp = 0;
+    const int idDown = 1;
+    check(peers == 2, "1a. init(selfId=0) 建了 2 个 peer（3 个节点里摘掉自己）",
+          "peers=" + std::to_string(peers));
 
     std::string resp;
     uint64_t us = 0;

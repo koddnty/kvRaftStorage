@@ -100,6 +100,7 @@ public:
     enum class State {
         INIT,
         READY,
+        STOP,
         ERROR
     };
 
@@ -119,9 +120,7 @@ public:
      * @param selfId    自己在这个集群里的 id；<0 表示不指定（会把所有节点都当对端，含自己）
      * @return 成功返回 peer 数量（>= 0），配置错误返回 -1
      */
-    m_sylar::Task<int> init(const std::string& confPath = kRpcConfPath,
-                            int configId = kRpcConfId,
-                            int selfId = -1);
+    m_sylar::Task<int> init(const RPC::RpcDefine& define, int selfId);
     m_sylar::Task<int> coConnectAll();      // 连接或重连
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> coConnectTask(int id);
     m_sylar::Task<int> coConnect(int id );
@@ -137,11 +136,14 @@ public:
      *  @brief 远程RPC调用
      */
     m_sylar::Task<CallState> call(int node_id,
-                                  std::shared_ptr<std::string> service,   // 服务
-                                  std::shared_ptr<std::string> method,    // 方法
+                                  const std::string service,   // 服务
+                                  const std::string method,    // 方法
                                   std::shared_ptr<std::string> req_bytes,
                                   std::shared_ptr<std::string> resp_bytes);
 
+    m_sylar::Task<void> stop();
+
+    State getState() {return m_state; }
 
 class SessionInfo {
 public:
@@ -149,9 +151,13 @@ public:
     std::atomic<bool> state{false};                 // false 未连接/已断开，true 已连接
     std::atomic<bool> reconnecting{false};          // 是否有协程正在重连本节点
     std::atomic<int>  consecutive_timeouts{0};      // 连续超时次数，成功即归零
+    // repair: 只给日志节流用 —— 连续重连失败轮数，连上就清零。
+    //   定时器每 300ms 一轮，每轮对这个 peer 打一条 "reconnect 放弃" WARN，
+    //   一个 down 掉的 peer 就是 ~3 条/秒；三个节点里两个 down 能到 ~7 条/秒，日志没法看。
+    std::atomic<int>  fail_rounds{0};
 };
 private:
-    State m_state{State::INIT};              // 当前客户端状态
+    std::atomic<State> m_state{State::INIT};              // 当前客户端状态
 
     std::vector<std::unique_ptr<SessionInfo>> m_infos;
     std::vector<RPCSession::ptr> m_sessions;

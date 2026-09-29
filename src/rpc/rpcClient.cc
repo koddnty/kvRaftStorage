@@ -56,19 +56,11 @@ int RPCClient::addPeer(const m_sylar::IPAddress::ptr& address) {
 }
 
 
-m_sylar::Task<int> RPCClient::init(const std::string& confPath, int configId, int selfId) {
+m_sylar::Task<int> RPCClient::init(const RPC::RpcDefine& define, int selfId) {
     // 从配置装载所有连接信息
-    //   配置机制、FormatConversion 的写法、以及"ConfigVar 构造即快照"和"setConfig 是覆盖
-    //   不是合并"这两个坑，都在 rpcConfig.hpp 里说明了。
-    RpcDefine def;
-    if (loadRpcConfig(confPath, configId, def) != 0) {
-        // def.errmsg 里已经是具体原因，loadRpcConfig 也打过日志了
-        co_return -1;
-    }
 
-    if (selfId >= 0 && def.find(selfId) == nullptr) {
-        M_SYLAR_LOG_ERROR(g_logger) << "[rpc] selfId=" << selfId << " 不在配置的节点列表里（"
-                                    << confPath << "）";
+    if (selfId >= 0 && define.find(selfId) == nullptr) {
+        M_SYLAR_LOG_ERROR(g_logger) << "[rpc] selfId=" << selfId << " 不在配置的节点列表里";
         co_return -1;
     }
     if (selfId < 0) {
@@ -84,7 +76,7 @@ m_sylar::Task<int> RPCClient::init(const std::string& confPath, int configId, in
     }
 
     // 全部节点里把自己摘出去 —— 自己不跟自己建 rpc 连接
-    for (const auto& n : def.nodes) {
+    for (const auto& n : define.nodes) {
         if (n.id == selfId) {
             continue;
         }
@@ -100,9 +92,21 @@ m_sylar::Task<int> RPCClient::init(const std::string& confPath, int configId, in
 
     // 尝试连接
     co_await coConnectAll();
-    // repair: coConnectAll() 只是把重连协程 schedule 出去就返回了，并不等连接建立，
-    //   所以这里的 READY 只表示"已发起连接"，不代表"已连上"。
-    //   真正的可用性判断看 per-node 的 SessionInfo::state（call() 据此返回 RETRY）。
+
+    // 启动循环重连定时器
+    auto client = shared_from_this();
+    m_sylar::TimeTask::ptr task = m_sylar::TimeTask::create(300, true,
+        [client](m_sylar::TimeTask::ptr timer) ->m_sylar::Task<void> {
+            if (client->getState() == State::STOP) {
+                timer->cancel();
+            }
+            else {
+                co_await client->coConnectAll(); // 重连所有，虽阻塞但定时器实现是当前任务结束后才开始循环计时，应无问题
+            }
+        }
+    );
+    m_sylar::TimeManager::getInstance()->addTimer(task);
+
     m_state = State::READY;
     co_return static_cast<int>(m_infos.size());
 }
@@ -116,8 +120,7 @@ m_sylar::Task<int> RPCClient::coConnectAll() {
         if (m_infos[i]->state.load(std::memory_order_acquire)) {
             continue;                                   // 已连接，不用动
         }
-        m_sylar::IOManager::getInstance()->schedule(
-            m_sylar::TaskCoro20::create_coro(std::bind(&RPCClient::coConnectTask, this, static_cast<int>(i))));
+        co_await coConnect(i);  // 连接
         ++started;
     }
     co_return started;
@@ -170,6 +173,7 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
                 m_sessions[id] = session;
             }
             info.consecutive_timeouts.store(0);
+            info.fail_rounds.store(0);      // repair: 连上了就把失败轮数清零，日志节流重新开始
             info.state.store(true, std::memory_order_release);
             co_return 0;
         }
@@ -181,17 +185,24 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
 
     // 放弃本轮。state 保持 false：call() 会立刻返回 RETRY 快速失败，不再白等一次 recv 超时；
     // 真正的重试交给周期性的 coConnectAll()。
-    M_SYLAR_LOG_WARN(g_logger) << "[rpc] reconnect 放弃, peer " << id
-                               << ", 尝试 " << maxAttempts << " 次均失败";
+    // repair: 日志节流 —— 定时器每 300ms 一轮，每轮都打 WARN 的话一个 down peer 就是 ~3 条/秒。
+    //   改成：第 1 轮打（让你知道它断了），之后每 20 轮（≈6 秒）才打一次，中间静默。
+    //   注意这里【只】节流日志，重连本身照旧每 300ms 试一次 —— 退避是【不能】做的，见下面的说明。
+    const int rounds = info.fail_rounds.fetch_add(1) + 1;
+    if (rounds == 1 || rounds % 20 == 0) {
+        M_SYLAR_LOG_WARN(g_logger) << "[rpc] reconnect 放弃, peer " << id
+                                   << ", 尝试 " << maxAttempts << " 次均失败，已连续 " << rounds << " 轮";
+    }
     co_return -1;
 }
 
 
 m_sylar::Task<CallState> RPCClient::call(int node_id,
-                                         std::shared_ptr<std::string> service,   // 服务
-                                         std::shared_ptr<std::string> method,    // 方法
+                                         const std::string service,   // 服务
+                                         const std::string method,    // 方法
                                          std::shared_ptr<std::string> req_bytes,
                                          std::shared_ptr<std::string> resp_bytes) {
+    if (m_state != State::READY) {co_return CallState::FAILED; }
     if (node_id < 0 || static_cast<size_t>(node_id) >= m_sessions.size()
                     || static_cast<size_t>(node_id) >= m_infos.size()) {
         M_SYLAR_LOG_WARN(g_logger) << "invalid node id = " << node_id << ", peer number = " << m_sessions.size();
@@ -215,7 +226,7 @@ m_sylar::Task<CallState> RPCClient::call(int node_id,
         co_return CallState::RETRY;
     }
 
-    m_sylar::IOState st =  co_await session->call(std::move(service), std::move(method), std::move(req_bytes),
+    m_sylar::IOState st =  co_await session->call(service, method, std::move(req_bytes),
                                               std::move(resp_bytes));
     if (st == m_sylar::IOState::TIMEOUT) {
 
@@ -251,5 +262,12 @@ m_sylar::Task<CallState> RPCClient::call(int node_id,
     co_return CallState::FAILED;                // 其它 I/O 错误（FAILED / UNKNOWN）
 }
 
+
+m_sylar::Task<void> RPCClient::stop() {
+    m_state = State::STOP;
+    co_return;      // repair: 原来没有 co_return —— 声明返回 Task<void> 却不是协程，
+                    //   编译期报 "no return statement in function returning non-void"，
+                    //   运行期返回的是垃圾 Task。补上让它成为真正的协程。
+}
 }  // namespace RPC
 }  // namespace craft

@@ -69,10 +69,10 @@ public:
     ~RPCSession();
 
     // 对当前节点调用方法
-    m_sylar::Task<m_sylar::IOState> call(std::shared_ptr<std::string> service,   // 服务
-                                  std::shared_ptr<std::string> method,    // 方法
-                                  std::shared_ptr<std::string> req_bytes,
-                                  std::shared_ptr<std::string> resp_bytes);
+    m_sylar::Task<m_sylar::IOState> call(std::string service,   // 服务
+                                    std::string method,    // 方法
+                                    std::shared_ptr<std::string> req_bytes,
+                                    std::shared_ptr<std::string> resp_bytes);
 
     /**
      *  @brief 客户端
@@ -80,7 +80,7 @@ public:
     */
     m_sylar::Task<m_sylar::IOState> co_sendMessage(const Frame& frame);     // 向对端发送数据
     m_sylar::Task<m_sylar::IOState> co_recvResponse(Response& frame, int request_id);       // 接收一个response
-    m_sylar::Task<m_sylar::IOState> co_recvRequest(Request& frame);       // 接收一个request
+    m_sylar::Task<m_sylar::IOState> co_recvRequest(Request& req);       // 接收一个request
 
 
     void setNodeId(int id) { node_id = id; }
@@ -98,7 +98,7 @@ private:
 private:
     SessionState m_state {SessionState::INITING};
     int node_id {-1};                                                   // 当前对端节点node_id，配置项中应从0开始
-    int m_request_id {0};                                               // 请求id,用于分离请求与响应
+    std::atomic<int> m_request_id {0};                                               // 请求id,用于分离请求与响应
 
     std::shared_ptr<m_sylar::IPv4Address> m_address = std::make_shared<m_sylar::IPv4Address>();     // 对端地址
 

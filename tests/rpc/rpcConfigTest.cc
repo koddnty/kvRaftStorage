@@ -10,6 +10,9 @@
 //      顺序一旦写错（比如把 ConfigVar 写成全局 static），配置会被静默忽略、peer 数变 0，
 //      下面 B1 立刻就会红。
 //
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/syscall.h>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -28,6 +31,28 @@ using namespace craft::RPC;
 
 static int g_pass = 0;
 static int g_fail = 0;
+
+// 探一个确定没人监听的空闲端口。
+// repair: B6 原来直接拿 conf/rpc.json 里的 8808/8810 去测"对端没起"，但只要你本地
+//   开着 ./kvRaft -i 0 / -i 2，那两个端口就是有人在听的 —— 客户端会真的连上、真的拿到回包
+//   （未注册的方法会回 UNK_METHOD，而 RPCSession::call 不看 code），断言就变成 SUCCESS。
+//   探一个空闲端口来测，测试才不依赖"本机有没有跑着集群"。
+static uint16_t probeFreePort() {
+    const int lfd = static_cast<int>(::syscall(SYS_socket, AF_INET, SOCK_STREAM, 0));
+    int on = 1;
+    ::syscall(SYS_setsockopt, lfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+
+    sockaddr_in sa{};
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sa.sin_port = 0;
+    if (::syscall(SYS_bind, lfd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) return 0;
+    socklen_t len = sizeof(sa);
+    ::syscall(SYS_getsockname, lfd, reinterpret_cast<sockaddr*>(&sa), &len);
+    const uint16_t port = ntohs(sa.sin_port);
+    ::syscall(SYS_close, lfd);
+    return port;
+}
 
 static void check(bool ok, const char* name, const std::string& detail = "") {
     if (ok) {
@@ -206,28 +231,38 @@ static m_sylar::Task<void, m_sylar::TaskBeginExecuter> runIntegration() {
     }
 
     // B4. RPCClient::init：3 个节点、我是 id=1 -> 应该只建 2 条连接
+    // repair: init 的签名已经从 init(confPath, configId, selfId) 改成
+    //   init(const RpcDefine&, selfId) —— 配置的读取统一由 loadRpcConfig 负责（见 B1）。
     g_client = std::make_shared<RPCClient>();
-    const int peers = co_await g_client->init(conf, kRpcConfId, /*selfId=*/1);
+    const int peers = co_await g_client->init(def, /*selfId=*/1);
     check(peers == 2, "B4. init(selfId=1) 建了 2 个 peer（3 个节点里把自己摘掉）",
           "peers=" + std::to_string(peers));
 
     // B5. selfId 不在配置里 -> 报错
     {
         auto c2 = std::make_shared<RPCClient>();
-        const int rt3 = co_await c2->init(conf, kRpcConfId, /*selfId=*/99);
+        const int rt3 = co_await c2->init(def, /*selfId=*/99);
         check(rt3 == -1, "B5. selfId 不在配置里 -> init 返回 -1", "rt=" + std::to_string(rt3));
     }
 
-    // B6. 没人监听 8808/8809 -> call 必须快速失败返回 RETRY，不能 hang
-    //     （这一步同时验证"配置装载 -> 建连失败 -> 快速失败"整条链路是通的）
+    // B6. 对端不可达 -> call 必须快速失败返回 RETRY，不能 hang
+    //     （同时验证"配置装载 -> 建连失败 -> 快速失败"整条链路是通的）
+    // repair: 不再用 conf/rpc.json 里的 8808 来测"对端没起"（你本地跑着集群时它会误报），
+    //   改成自己组一份指向【空闲端口】的配置。
     {
-        auto s = std::make_shared<std::string>("RaftRpc");
-        auto m = std::make_shared<std::string>("AppendEntries");
+        RpcDefine dead;
+        dead.nodes = {
+            NodeDefine{0, "127.0.0.1", probeFreePort()},   // 自己，init 会摘掉
+            NodeDefine{1, "127.0.0.1", probeFreePort()},   // 对端：确定没人监听
+        };
+        auto c = std::make_shared<RPCClient>();
+        const int n = co_await c->init(dead, /*selfId=*/0);
         auto r = std::make_shared<std::string>("x");
         auto p = std::make_shared<std::string>();
-        const CallState st = co_await g_client->call(0, s, m, r, p);
-        check(st == CallState::RETRY, "B6. 对端没起 -> call 返回 RETRY（快速失败）",
-              "state=" + std::to_string(static_cast<int>(st)));
+        const CallState st = co_await c->call(0, "RaftRpc", "AppendEntries", r, p);
+        check(n == 1 && st == CallState::RETRY,
+              "B6. 对端不可达 -> call 返回 RETRY（快速失败）",
+              "peers=" + std::to_string(n) + " state=" + std::to_string(static_cast<int>(st)));
     }
 
     g_done = true;

@@ -7,19 +7,30 @@
 namespace craft {
 
 // RPC 总入口（单例）
-//
-//    static T* GetInstance() { static T c; c.init(); return &c; }
-//    所以本类【必须】有 init()，而且每次 GetInstance 都会调用它 → 必须幂等。
 class RPCManager : public m_sylar::Singleton<RPCManager> {
 public:
+
+    void create() {
+        if (m_client == nullptr) {
+            m_client = std::make_shared<RPC::RPCClient>();
+        }
+        if (m_server == nullptr) {
+            m_server = std::make_shared<RPC::RPCServer>();
+        }
+    }
+
     // 幂等：重复调用不会重建连接（GetInstance 每次都会调它）
-    void init() {
+    m_sylar::Task<void> init(const RPC::RpcDefine& define, int selfId) {
         if (m_inited) {
-            return;
+            co_return;
         }
         m_inited = true;
-        // TODO: 装载 conf → 建 Peer 连接 / 起 RPCServer
-        
+        create();
+        // 装载 conf
+        co_await m_client->init(define, selfId);
+        co_await m_server->init(define, selfId);
+
+        m_server->start();
     }
 
     RPC::RPCServer::ptr getServer() { return m_server; }

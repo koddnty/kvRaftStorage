@@ -18,8 +18,8 @@ RPCSession::RPCSession(m_sylar::Socket::ptr sock) : m_sylar::Session(sock) {
 RPCSession::~RPCSession() = default;
 
 
-m_sylar::Task<m_sylar::IOState> RPCSession::call(std::shared_ptr<std::string> service,   // 服务
-                              std::shared_ptr<std::string> method,    // 方法
+m_sylar::Task<m_sylar::IOState> RPCSession::call(std::string service,   // 服务
+                              std::string method,    // 方法
                               std::shared_ptr<std::string> req_bytes,
                               std::shared_ptr<std::string> resp_bytes) {
     // 状态检查
@@ -34,8 +34,8 @@ m_sylar::Task<m_sylar::IOState> RPCSession::call(std::shared_ptr<std::string> se
     // 数据准备
     Request req;
     int request_id = m_request_id++;
-    req.set_service(*service);
-    req.set_method(*method);
+    req.set_service(service);
+    req.set_method(method);
     req.set_data(*req_bytes);
     req.set_id(request_id);
     Frame send_frame;
@@ -200,9 +200,9 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvResponse(Response& frame, int
 
 
 
-m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& frame) {
+m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& req) {
     // 从缓存 检查接受缓冲区和帧缓冲区
-    m_sylar::IOState st = co_await recvRequestFromBuffer(frame);
+    m_sylar::IOState st = co_await recvRequestFromBuffer(req);
     if (st != m_sylar::IOState::FAILED) {       // 如果不是正常的查询不到（成功或错误），直接返回
         co_return st;
     }
@@ -212,7 +212,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& frame) {
     m_sylar::CoUniqueLock recv_lock(m_recv_mutex);
     co_await recv_lock.lock();
     // 重新查缓存
-    st = co_await recvRequestFromBuffer(frame);
+    st = co_await recvRequestFromBuffer(req);
     if (st != m_sylar::IOState::FAILED) {
         co_return st;
     }
@@ -227,7 +227,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& frame) {
         if(recv_len == 0)
         {
 
-            M_SYLAR_LOG_WARN(g_logger) << "[rpc] peer " << node_id << " 关闭了连接 (recv=0/EOF)";
+            M_SYLAR_LOG_WARN(g_logger) << "[rpc] peer " << req.id() << " 关闭了连接 (recv=0/EOF)";
             co_return m_sylar::IOState::CLOSED;
         }
         else if(recv_len < 0)
@@ -286,7 +286,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& frame) {
         }
 
         // 接收帧
-        st = co_await recvRequestFromBuffer(frame);
+        st = co_await recvRequestFromBuffer(req);
         if (st != m_sylar::IOState::FAILED) {       // 如果不是正常的查询不到（成功或错误），直接返回
             co_return st;
         }

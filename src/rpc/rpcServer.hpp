@@ -14,6 +14,11 @@ class RPCServer : public m_sylar::TcpServer{
 public:
     using ptr = std::shared_ptr<RPCServer>;
     using HandlerFunc = std::function<m_sylar::Task<void>(std::shared_ptr<Request> req, RPCSession::ptr)>;
+    // repair: 原来写的是 `m_sylar::Task<int> init(int node_id) {m_node_id = node_id; }`
+    //   —— 声明返回 Task<int>，函数体里既没有 co_return 也不是协程，编译期就报
+    //   "no return statement in function returning non-void"，运行期返回的是垃圾 Task，
+    //   co_await 它属于 UB。补上 co_return 让它成为真正的协程。
+    m_sylar::Task<int> init(RpcDefine define, int node_id);
     bool start() override;
 
     void registeRoute(const std::string& service, const std::string& method, HandlerFunc func);
