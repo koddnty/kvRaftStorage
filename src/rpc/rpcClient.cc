@@ -189,7 +189,7 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
     //   改成：第 1 轮打（让你知道它断了），之后每 20 轮（≈6 秒）才打一次，中间静默。
     //   注意这里【只】节流日志，重连本身照旧每 300ms 试一次 —— 退避是【不能】做的，见下面的说明。
     const int rounds = info.fail_rounds.fetch_add(1) + 1;
-    if (rounds == 1 || rounds % 20 == 0) {
+    if (rounds == 1 || rounds % 300 == 0) {
         M_SYLAR_LOG_WARN(g_logger) << "[rpc] reconnect 放弃, peer " << id
                                    << ", 尝试 " << maxAttempts << " 次均失败，已连续 " << rounds << " 轮";
     }

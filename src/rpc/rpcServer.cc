@@ -71,6 +71,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RPCServer::startAccept(m_sylar::
             else
             {
                 M_SYLAR_LOG_WARN(g_logger) << "accept failed, errno : " << errno << " error : " << strerror(errno);
+                co_return;
             }
         }
     }
@@ -106,6 +107,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RPCServer::handleClient(m_sylar:
         }
         else if (state != m_sylar::IOState::SUCCESS) {
             M_SYLAR_LOG_WARN(g_logger) << "接收数据出现问题：" << ioStateName(state);
+            co_return;
         }
 
         // 请求路由

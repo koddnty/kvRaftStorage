@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
     RPC::RpcDefine define;
     RPC::loadRpcConfig(confPath, kRpcConfId, define);
 
-    auto* iom = new m_sylar::IOManager("kvraft", 4);
+    auto* iom = new m_sylar::IOManager("kvraft", 1);
     iom->schedule(m_sylar::TaskCoro20::create_coro(std::bind(&initRPC, define, nodeId)));
     if (nodeId != 0) {
         iom->schedule(m_sylar::TaskCoro20::create_coro(std::bind(&circle_task, 0)));
