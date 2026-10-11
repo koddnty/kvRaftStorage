@@ -2,8 +2,9 @@
 // RPCClient 重连语义测试：真实 RPCServer + 一个"永远不在线"的端口
 //
 // repair: 这个文件原来挂的是【裸 syscall 手写的、可以上下线的假服务端】。现在换成：
-//   · peer 0 = 真正的 RPCServer（正常往返；另用 Drop handler 模拟"服务端把连接切断"）
-//   · peer 1 = 一个探出来但【没有 listener】的端口（模拟对端一直不在线）
+//   · node 1 = 真正的 RPCServer（正常往返；另用 Drop handler 模拟"服务端把连接切断"）
+//   · node 2 = 一个探出来但【没有 listener】的端口（模拟对端一直不在线）
+//   （dfix：下面是 node id，不是 peers 数组下标 —— 见 1g）
 //   这样测试里不用再维护第二份线上协议实现。原来假服务端的"上下线"两条路径现在分别由
 //   Drop handler（切断已有连接）和 dead port（压根连不上）覆盖，语义还更清楚。
 //
@@ -163,12 +164,16 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
     RpcDefine def;
     def.nodes = {
         NodeDefine{0, "127.0.0.1", serverPort},     // 自己（selfId=0）：init 会摘掉，不会被连
-        NodeDefine{1, "127.0.0.1", serverPort},     // peer 0 = 真服务端
-        NodeDefine{2, "127.0.0.1", deadPort},       // peer 1 = 没有任何 listener
+        NodeDefine{1, "127.0.0.1", serverPort},     // node 1 = 真服务端
+        NodeDefine{2, "127.0.0.1", deadPort},       // node 2 = 没有任何 listener
     };
     const int peers = co_await g_client->init(def, /*selfId=*/0);
-    const int idUp = 0;
-    const int idDown = 1;
+    // dfix: ★ 这里的下标就是【node id 本身】了（原来 addPeer 按下标 push_back，
+    //   peers 里又摘掉了自己，于是 slot0=node1、slot1=node2：call(1) 其实打到 node2，
+    //   call(2) 直接越界恒定 UNK_NODE —— "invalid node id = 2, peer number = 2"）。
+    const int idUp = 1;                             // 真服务端
+    const int idDown = 2;                           // 死端口
+    const int idSelf = 0;                           // 本机自己那格是空洞
     check(peers == 2, "1a. init(selfId=0) 建了 2 个 peer（3 个节点里摘掉自己）",
           "peers=" + std::to_string(peers));
 
@@ -187,6 +192,29 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
     const uint64_t re_us = nowUs() - t_re;
     check(crt2 == 0 && re_us < 20 * 1000, "1d. 已连接时 coConnect 立刻返回",
           "rt=" + std::to_string(crt2) + " us=" + std::to_string(re_us));
+
+    // ---------- 1e~1g. ★ node id 与下标的映射（这次修的 bug 的回归） ----------
+    //   旧实现：下标是"加入顺序"，而 peers 里摘掉了自己 ⇒ -i 0 时 slot0=node1、slot1=node2，
+    //   于是 call(1) 实际打到 node2 的连接上，call(2) 越界恒定 UNK_NODE
+    //   （现场日志 "invalid node id = 2, peer number = 2"）。
+    {
+        uint64_t t_self = 0;
+        const CallState s_self = co_await doCall(idSelf, "AppendEntries", "self", &resp, &t_self);
+        check(s_self == CallState::UNK_NODE, "1e. call(自己的 id) → UNK_NODE（那格是空洞）",
+              "state=" + stateName(s_self));
+
+        uint64_t t_oob = 0;
+        const CallState s_oob = co_await doCall(99, "AppendEntries", "oob", &resp, &t_oob);
+        check(s_oob == CallState::UNK_NODE && t_oob < 30 * 1000,
+              "1f. call(配置里不存在的 id) → 立刻 UNK_NODE（不越界、不崩）",
+              "state=" + stateName(s_oob) + " us=" + std::to_string(t_oob));
+
+        // ★ 关键：远端真实存在的 node id 必须打到对应的那条连接上（旧实现这里恒 UNK_NODE）
+        const CallState s_map = co_await doCall(idUp, "AppendEntries", "id-map", &resp, &us);
+        check(s_map == CallState::SUCCESS && resp == "echo:id-map",
+              "1g. \xe2\x98\x85 call(node id) 打到正确对端（下标==node id 回归）",
+              "state=" + stateName(s_map) + " resp=" + resp);
+    }
 
     // ---------- 2. 对端（死端口）不在线：coConnect 必须有限次尝试后放弃 ----------
     const uint64_t t_rec = nowUs();
@@ -219,7 +247,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
     check(st == CallState::RETRY, "2c. 放弃重连后，调用依然立刻返回 RETRY",
           "state=" + stateName(st) + " us=" + std::to_string(us));
 
-    // ---------- 3. 对端恢复：在 peer 1 那个端口上起第二个真服务端 ----------
+    // ---------- 3. 对端恢复：在 node 2（idDown）那个端口上起第二个真服务端 ----------
     //   这条路正是 Raft 的做法：连不上就先失败，靠周期性的 coConnectAll() 再试。
     //   （不去停/重启第一个 server —— TcpServer::stop() 只关监听 socket，
     //     已建立的连接不受影响，而且服务端 recv 超时是 30s，测起来太慢。）
@@ -243,10 +271,10 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
     check(st == CallState::SUCCESS && resp == "echo:back", "3b. \xe2\x98\x85 重连后调用恢复正常",
           "state=" + stateName(st) + " resp=" + resp + " us=" + std::to_string(us));
 
-    // 原来的 peer 0 全程没受影响（两个方向/两个节点互不牵连）
+    // 原来的 node 1（idUp）全程没受影响（两条连接互不牵连）
     st = co_await doCall(idUp, "AppendEntries", "up-still-ok", &resp, &us);
     check(st == CallState::SUCCESS && resp == "echo:up-still-ok",
-          "3c. peer 1 的故障没有影响 peer 0（每条连接各自独立）",
+          "3c. node 2 的故障没有影响 node 1（每条连接各自独立）",
           "state=" + stateName(st) + " resp=" + resp);
 
     g_done.store(true);

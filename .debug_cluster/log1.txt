@@ -1,0 +1,178 @@
+供默认logger
+[config error] config path servers.basic.timeout.recv not found in json data -> ConfigVar::ConfigVar(), use default value
+[config error] config path servers.basic.timeout.send not found in json data -> ConfigVar::ConfigVar(), use default value
+[config error] config path servers.basic.limit.buffer_size not found in json data -> ConfigVar::ConfigVar(), use default value
+[config error] config path servers.http.tcpserver.timeout.read not found in json data -> ConfigVar::ConfigVar(), use default value
+[config error] config path servers.http.tcpserver.timeout.connect not found in json data -> ConfigVar::ConfigVar(), use default value
+[config error] config path basic.timer.blocklength not found in json data -> ConfigVar::ConfigVar(), use default value
+nodeId=1
+confPath=/home/koddnty/user/projects/KVraft/KVRaftStorage/.debug_cluster/conf/rpc.json
+╭─1791697807	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	rpcClient.cc:113	
+╰─[rpc] add peer: node=0 -> 127.0.0.1:9808
+╭─1791697807	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	rpcClient.cc:113	
+╰─[rpc] add peer: node=2 -> 127.0.0.1:9810
+╭─1791697807	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	main.cc:36	
+╰─开始申请循环，circle_time：3
+╭─1791697807	[WARN]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	rpcClient.cc:222	
+╰─[rpc] reconnect 放弃, peer 0, 尝试 3 次均失败，已连续 1 轮
+╭─1791697807	[WARN]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	rpcClient.cc:222	
+╰─[rpc] reconnect 放弃, peer 2, 尝试 3 次均失败，已连续 1 轮
+╭─1791697807	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:62	
+╰─初始化当前节点{1} 完成, 节点已启动
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697810	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697813	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697813	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697813	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697813	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697813	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697813	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697816	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697816	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697816	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697816	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697816	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697816	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697819	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697819	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697819	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697819	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697819	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697819	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697822	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697822	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697822	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697822	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697822	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697822	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697825	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697825	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697825	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697825	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697825	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697825	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697828	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697828	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697828	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697828	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697828	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697828	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697831	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697831	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697831	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697831	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697831	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697831	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697834	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697834	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697834	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697834	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697834	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697834	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697837	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697837	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697837	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697837	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697837	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697837	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697840	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697840	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697840	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697840	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697840	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697840	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697843	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697843	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697843	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697843	[INFO]	[craft]	[thread:36553:kvraft_2 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697843	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697843	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697846	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	main.cc:41	
+╰─申请成为leader中...
+╭─1791697846	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 0
+╭─1791697846	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:117	
+╰─I got a vote from 2
+╭─1791697846	[INFO]	[craft]	[thread:36551:kvraft_0 fiber:4294967295]	node.cc:125	
+╰─I have got majority votes, i will be the leader
+╭─1791697846	[INFO]	[craft]	[thread:36554:kvraft_3 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+╭─1791697846	[INFO]	[craft]	[thread:36552:kvraft_1 fiber:4294967295]	node.cc:156	
+╰─回复选举响应中...
+收到信号 15，准备退出
