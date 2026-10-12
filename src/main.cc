@@ -18,7 +18,7 @@ static auto g_logger = M_SYLAR_LOG_NAME("craft");
 
 
 volatile sig_atomic_t keep_running = 1;
-static RaftNode node;       // 当前raft节点
+static std::shared_ptr<RaftNode> node = std::make_shared<RaftNode>();       // 当前raft节点
 
 
 
@@ -29,34 +29,11 @@ void handle_signal(int sig) {
 }
 
 
-// 循环申请成为leader --------------------------------------------------
-m_sylar::Task<void, m_sylar::TaskBeginExecuter> circle_task(int node_id) {
-    co_await m_sylar::co_sleep(5);
-    long circle_time = random() % 10;
-    M_SYLAR_LOG_INFO(g_logger) << "开始申请循环，circle_time：" << circle_time;
-
-    // 每隔circle_times，申请成为leader。
-    m_sylar::TimeTask::ptr task = m_sylar::TimeTask::create(circle_time * 1000, true,
-        [node_id](m_sylar::TimeTask::ptr task) -> m_sylar::Task<void> {
-            M_SYLAR_LOG_INFO(g_logger) << "申请成为leader中...";
-            co_await node.startElection();
-            if (node.getState() == NodeState::State::Leader) {
-                M_SYLAR_LOG_INFO(g_logger) << " 我已成为leader";
-            }
-        }
-    );
-
-    m_sylar::TimeManager::getInstance()->addTimer(task);
-    co_return;
-}
-
-
-
 // 节点初始化函数 ----------------------------------------
 m_sylar::Task<void, m_sylar::TaskBeginExecuter> initRaftNode
-        (RaftNode& node, RPC::RpcDefine def, int node_id) {
-    co_await node.init(def, node_id);
-    node.start();
+        (std::shared_ptr<RaftNode> node, RPC::RpcDefine def, int node_id) {
+    co_await node->init(def, node_id);
+    node->start();
 
 
     M_SYLAR_LOG_INFO(g_logger) << "初始化当前节点{" << node_id << "}" << " 完成, 节点已启动";
@@ -123,11 +100,8 @@ int main(int argc, char** argv) {
     auto* iom = new m_sylar::IOManager("kvraft", 4);
 
     iom->schedule(m_sylar::TaskCoro20::create_coro(
-        std::bind(&initRaftNode, std::ref(node), define, node_id)));
+        std::bind(&initRaftNode, node, define, node_id)));
 
-
-    iom->schedule(m_sylar::TaskCoro20::create_coro(
-        std::bind(&circle_task, node_id)));
 
     // 注册路由
     while (keep_running) {

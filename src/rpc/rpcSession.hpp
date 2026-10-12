@@ -79,8 +79,12 @@ public:
      * @return  返回CLOSED代表此连接发生异常（包括但不限于发送/接收失败，帧解析失败），需要重新建立连接
     */
     m_sylar::Task<m_sylar::IOState> co_sendMessage(const Frame& frame);     // 向对端发送数据
-    m_sylar::Task<m_sylar::IOState> co_recvResponse(Response& frame, int request_id);       // 接收一个response
-    m_sylar::Task<m_sylar::IOState> co_recvRequest(Request& req);       // 接收一个request
+    m_sylar::Task<m_sylar::IOState> co_sendRpcMessage(const Response& resp);     // 向对端发送数据
+    m_sylar::Task<m_sylar::IOState> co_sendRpcMessage(const Request& req);     // 向对端发送数据
+    m_sylar::Task<m_sylar::IOState> co_recvRpcResponse(Response& frame, int request_id);       // 接收一个response
+    m_sylar::Task<m_sylar::IOState> co_recvRpcRequest(Request& req);       // 接收一个request
+
+
 
 
     void setNodeId(int id) { node_id = id; }

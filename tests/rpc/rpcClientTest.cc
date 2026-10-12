@@ -1,23 +1,6 @@
 //
 // RPCClient 重连语义测试：真实 RPCServer + 一个"永远不在线"的端口
 //
-// repair: 这个文件原来挂的是【裸 syscall 手写的、可以上下线的假服务端】。现在换成：
-//   · node 1 = 真正的 RPCServer（正常往返；另用 Drop handler 模拟"服务端把连接切断"）
-//   · node 2 = 一个探出来但【没有 listener】的端口（模拟对端一直不在线）
-//   （dfix：下面是 node id，不是 peers 数组下标 —— 见 1g）
-//   这样测试里不用再维护第二份线上协议实现。原来假服务端的"上下线"两条路径现在分别由
-//   Drop handler（切断已有连接）和 dead port（压根连不上）覆盖，语义还更清楚。
-//
-// 盯的三个坑（都是"对端掉线"才暴露的）：
-//   1. 对端掉线后 call() 必须【快速失败】返回 RETRY，绝不能卡住 ——
-//      旧实现里重连协程持着 m_infos[id].mutex 在 `while(rt)` 里死循环，而 call() 的
-//      CLOSED 分支要 co_await 拿同一把锁，于是对该节点的所有 call() 永久阻塞。
-//      Raft 里心跳协程就是这么被卡死的，leader 直接被选掉。
-//   2. coConnect() 的重连尝试必须【封顶】后放弃，不能无限重试。
-//   3. 服务端把连接切断之后，客户端要能自动重连、调用恢复。
-//
-// 整个用例挂了 alarm() 看门狗：一旦卡死就直接退出并打标记 —— 卡死本身就是第 1 条的证据。
-//
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/syscall.h>
@@ -168,9 +151,6 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> runAll(uint16_t serverPort, uint
         NodeDefine{2, "127.0.0.1", deadPort},       // node 2 = 没有任何 listener
     };
     const int peers = co_await g_client->init(def, /*selfId=*/0);
-    // dfix: ★ 这里的下标就是【node id 本身】了（原来 addPeer 按下标 push_back，
-    //   peers 里又摘掉了自己，于是 slot0=node1、slot1=node2：call(1) 其实打到 node2，
-    //   call(2) 直接越界恒定 UNK_NODE —— "invalid node id = 2, peer number = 2"）。
     const int idUp = 1;                             // 真服务端
     const int idDown = 2;                           // 死端口
     const int idSelf = 0;                           // 本机自己那格是空洞

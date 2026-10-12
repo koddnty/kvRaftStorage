@@ -49,10 +49,8 @@ size_t RPCClient::peerCount() const {
 }
 
 
-// dfix: 入参改成 node id，并按 node id 直接下标存取（详见 hpp 里的说明）
+
 int RPCClient::addPeer(int nodeId, const m_sylar::IPAddress::ptr& address) {
-    // repair: 补上配置装载的入口 —— 原来 m_infos / m_sessions 一个填充的地方都没有，
-    //   RPCClient 这层等于没法用。m_infos 装 unique_ptr（SessionInfo 里有 atomic，
     //   既不可拷贝也不可移动，vector 直接装不下），m_sessions 必须同步增长。
     if (nodeId < 0) {
         M_SYLAR_LOG_ERROR(g_logger) << "[rpc] 非法 node id: " << nodeId;
@@ -105,7 +103,7 @@ m_sylar::Task<int> RPCClient::init(const RPC::RpcDefine& define, int selfId) {
             M_SYLAR_LOG_ERROR(g_logger) << "[rpc] 节点 " << n.id << " 的地址非法: " << n.ip;
             co_return -1;
         }
-        const int peerId = addPeer(n.id, addr);        // dfix: 下标 = node id
+        const int peerId = addPeer(n.id, addr);
         if (peerId < 0) {
             M_SYLAR_LOG_ERROR(g_logger) << "[rpc] 装载节点失败: node=" << n.id;
             co_return -1;
@@ -132,7 +130,7 @@ m_sylar::Task<int> RPCClient::init(const RPC::RpcDefine& define, int selfId) {
     m_sylar::TimeManager::getInstance()->addTimer(task);
 
     m_state = State::READY;
-    co_return static_cast<int>(peerCount());        // dfix: m_infos.size() 现在是 max(id)+1，含空洞
+    co_return static_cast<int>(peerCount());
 }
 
 
@@ -142,7 +140,7 @@ m_sylar::Task<int> RPCClient::coConnectAll() {
 
     for (size_t i = 0; i < m_infos.size() && i < m_sessions.size(); ++i) {
         if (m_infos[i] == nullptr) {
-            continue;                                   // dfix: 空洞 —— 本机自己 / 配置里缺号，没有对端
+            continue;
         }
         if (m_infos[i]->state.load(std::memory_order_acquire)) {
             continue;                                   // 已连接，不用动
@@ -162,7 +160,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RPCClient::coConnectTask(int id 
 
 
 m_sylar::Task<int> RPCClient::coConnect(int id ) {
-    // dfix: id 是 node id；空洞表示这个 id 没有对端（本机自己 / 配置里缺号）
+
     if (id < 0 || static_cast<size_t>(id) >= m_infos.size()
                 || static_cast<size_t>(id) >= m_sessions.size()
                 || m_infos[id] == nullptr) {
@@ -195,7 +193,7 @@ m_sylar::Task<int> RPCClient::coConnect(int id ) {
         if (rt == 0) {
             // 连接成功：整个替换掉旧的 RPCSession（旧对象由 shared_ptr 自然回收）
             auto session = std::make_shared<RPCSession>(sock);
-            session->setNodeId(id);     // dfix: 这里现在是真的对端 node id（以前传的是加入顺序下标）
+            session->setNodeId(id);
             // recv/send 超时 RPCSession 的构造函数里已经定死了（见上面那条 repair），这里不重复设置
             {   // 只在替换那一瞬间加锁，临界区里没有任何挂起点
                 std::lock_guard<std::mutex> lk(m_sessions_mutex);
@@ -232,7 +230,6 @@ m_sylar::Task<CallState> RPCClient::call(int node_id,
                                          std::shared_ptr<std::string> req_bytes,
                                          std::shared_ptr<std::string> resp_bytes) {
     if (m_state != State::READY) {co_return CallState::FAILED; }
-    // dfix: node_id 是配置里的节点 id（下标 == node id）。空洞 = 配置里没有这个对端（含本机自己）。
     if (node_id < 0 || static_cast<size_t>(node_id) >= m_infos.size()
                     || static_cast<size_t>(node_id) >= m_sessions.size()
                     || m_infos[node_id] == nullptr) {

@@ -126,19 +126,6 @@ public:
     m_sylar::Task<int> coConnect(int id );
     /**
      *  @brief 加一个 peer（配置装载用），返回 node id（失败 -1）
-     *  repair: 原来 m_infos / m_sessions 没有任何填充入口（init() 里的配置装载一直是 TODO），
-     *     导致 RPCClient 这一层完全没法被驱动、更没法测。这里补上最小入口。
-     *     注意 m_infos 和 m_sessions 必须同步增长、下标一一对应 —— coConnect / call 都按同一个下标访问。
-     *
-     *  dfix: ★ 下标从"加入顺序"改成【node id 本身】。
-     *     原来这里是 push_back + 返回加入顺序，而 call(node_id) 又把这个下标当 node id 用。
-     *     peers 列表里摘掉了自己，于是 `-i 0` 时 slot0=node1、slot1=node2：
-     *       call(1) → 实际打到 node 2 那条连接上；call(2) → 越界 → 恒定返回 UNK_NODE。
-     *     现象：日志 "invalid node id = 2, peer number = 2"，node 0/1 永远拉不到 node 2 的票，
-     *     而 node 2 却能拉满票（它的 peers 恰好是 0、1，下标和 id 撞对了）。
-     *     现在直接按 node id 索引，没有对端的 id（本机自己、配置里缺号）留 nullptr 空洞，
-     *     call/coConnect/coConnectAll 的入参语义统一成 node id。
-     *     只在初始化阶段调用（运行期不再增删 peer）。
      */
     int addPeer(int nodeId, const m_sylar::IPAddress::ptr& address);
 
@@ -149,7 +136,7 @@ public:
 
     /**
      *  @brief 远程RPC调用
-     *  @param node_id  配置里的【节点 id】，不是数组下标（dfix，见 addPeer）
+     *  @param node_id  配置里的【节点 id】，不是数组下标（，见 addPeer）
      */
     m_sylar::Task<CallState> call(int node_id,
                                   const std::string service,   // 服务

@@ -52,7 +52,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::call(std::string service,   // 服�
 
     std::shared_ptr<Response> resp = std::make_shared<Response>();
 retry:
-    const m_sylar::IOState recv_rt = co_await co_recvResponse(*resp, request_id);        // 接收消息
+    const m_sylar::IOState recv_rt = co_await co_recvRpcResponse(*resp, request_id);        // 接收消息
     if (recv_rt != m_sylar::IOState::SUCCESS) {
         M_SYLAR_LOG_ERROR(g_logger) << "[rpc] recv 失败, peer " << node_id
                                     << " io=" << ioStateName(recv_rt);
@@ -97,10 +97,23 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_sendMessage(const Frame& frame) {
 }
 
 
+m_sylar::Task<m_sylar::IOState> RPCSession::co_sendRpcMessage(const Response& resp) {
+    Frame frame;
+    frame.setData(resp.SerializeAsString());
+    co_return co_await co_sendMessage(frame);
+}
+
+
+m_sylar::Task<m_sylar::IOState> RPCSession::co_sendRpcMessage(const Request& req) {
+    Frame frame;
+    frame.setData(req.SerializeAsString());
+    co_return co_await co_sendMessage(frame);
+}
 
 
 
-m_sylar::Task<m_sylar::IOState> RPCSession::co_recvResponse(Response& frame, int request_id) {
+
+m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRpcResponse(Response& frame, int request_id) {
     // 从缓存 检查接受缓冲区和帧缓冲区
     m_sylar::IOState st = co_await recvResponseFromBuffer(frame, request_id);
     if (st != m_sylar::IOState::FAILED) {       // 如果不是正常的查询不到（成功或错误），直接返回
@@ -200,7 +213,7 @@ m_sylar::Task<m_sylar::IOState> RPCSession::co_recvResponse(Response& frame, int
 
 
 
-m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRequest(Request& req) {
+m_sylar::Task<m_sylar::IOState> RPCSession::co_recvRpcRequest(Request& req) {
     // 从缓存 检查接受缓冲区和帧缓冲区
     m_sylar::IOState st = co_await recvRequestFromBuffer(req);
     if (st != m_sylar::IOState::FAILED) {       // 如果不是正常的查询不到（成功或错误），直接返回

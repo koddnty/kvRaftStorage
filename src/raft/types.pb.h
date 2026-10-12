@@ -358,9 +358,9 @@ class RequestVoteArgs final :
 
   enum : int {
     kTermFieldNumber = 1,
-    kCandidateIdFieldNumber = 2,
     kLastLogIndexFieldNumber = 3,
     kLastLogTermFieldNumber = 4,
+    kCandidateIdFieldNumber = 2,
   };
   // uint64 term = 1;
   void clear_term();
@@ -369,15 +369,6 @@ class RequestVoteArgs final :
   private:
   uint64_t _internal_term() const;
   void _internal_set_term(uint64_t value);
-  public:
-
-  // uint64 candidate_id = 2;
-  void clear_candidate_id();
-  uint64_t candidate_id() const;
-  void set_candidate_id(uint64_t value);
-  private:
-  uint64_t _internal_candidate_id() const;
-  void _internal_set_candidate_id(uint64_t value);
   public:
 
   // uint64 last_log_index = 3;
@@ -398,6 +389,15 @@ class RequestVoteArgs final :
   void _internal_set_last_log_term(uint64_t value);
   public:
 
+  // int32 candidate_id = 2;
+  void clear_candidate_id();
+  int32_t candidate_id() const;
+  void set_candidate_id(int32_t value);
+  private:
+  int32_t _internal_candidate_id() const;
+  void _internal_set_candidate_id(int32_t value);
+  public:
+
   // @@protoc_insertion_point(class_scope:craft.RequestVoteArgs)
  private:
   class _Internal;
@@ -407,9 +407,9 @@ class RequestVoteArgs final :
   typedef void DestructorSkippable_;
   struct Impl_ {
     uint64_t term_;
-    uint64_t candidate_id_;
     uint64_t last_log_index_;
     uint64_t last_log_term_;
+    int32_t candidate_id_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -699,10 +699,10 @@ class AppendEntriesArgs final :
   enum : int {
     kEntriesFieldNumber = 5,
     kTermFieldNumber = 1,
-    kLeaderIdFieldNumber = 2,
     kPrevLogIndexFieldNumber = 3,
     kPrevLogTermFieldNumber = 4,
     kLeaderCommitFieldNumber = 6,
+    kLeaderIdFieldNumber = 2,
   };
   // repeated .craft.LogEntry entries = 5;
   int entries_size() const;
@@ -729,15 +729,6 @@ class AppendEntriesArgs final :
   private:
   uint64_t _internal_term() const;
   void _internal_set_term(uint64_t value);
-  public:
-
-  // uint64 leader_id = 2;
-  void clear_leader_id();
-  uint64_t leader_id() const;
-  void set_leader_id(uint64_t value);
-  private:
-  uint64_t _internal_leader_id() const;
-  void _internal_set_leader_id(uint64_t value);
   public:
 
   // uint64 prev_log_index = 3;
@@ -767,6 +758,15 @@ class AppendEntriesArgs final :
   void _internal_set_leader_commit(uint64_t value);
   public:
 
+  // int32 leader_id = 2;
+  void clear_leader_id();
+  int32_t leader_id() const;
+  void set_leader_id(int32_t value);
+  private:
+  int32_t _internal_leader_id() const;
+  void _internal_set_leader_id(int32_t value);
+  public:
+
   // @@protoc_insertion_point(class_scope:craft.AppendEntriesArgs)
  private:
   class _Internal;
@@ -777,10 +777,10 @@ class AppendEntriesArgs final :
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::craft::LogEntry > entries_;
     uint64_t term_;
-    uint64_t leader_id_;
     uint64_t prev_log_index_;
     uint64_t prev_log_term_;
     uint64_t leader_commit_;
+    int32_t leader_id_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -1050,22 +1050,22 @@ inline void RequestVoteArgs::set_term(uint64_t value) {
   // @@protoc_insertion_point(field_set:craft.RequestVoteArgs.term)
 }
 
-// uint64 candidate_id = 2;
+// int32 candidate_id = 2;
 inline void RequestVoteArgs::clear_candidate_id() {
-  _impl_.candidate_id_ = uint64_t{0u};
+  _impl_.candidate_id_ = 0;
 }
-inline uint64_t RequestVoteArgs::_internal_candidate_id() const {
+inline int32_t RequestVoteArgs::_internal_candidate_id() const {
   return _impl_.candidate_id_;
 }
-inline uint64_t RequestVoteArgs::candidate_id() const {
+inline int32_t RequestVoteArgs::candidate_id() const {
   // @@protoc_insertion_point(field_get:craft.RequestVoteArgs.candidate_id)
   return _internal_candidate_id();
 }
-inline void RequestVoteArgs::_internal_set_candidate_id(uint64_t value) {
+inline void RequestVoteArgs::_internal_set_candidate_id(int32_t value) {
   
   _impl_.candidate_id_ = value;
 }
-inline void RequestVoteArgs::set_candidate_id(uint64_t value) {
+inline void RequestVoteArgs::set_candidate_id(int32_t value) {
   _internal_set_candidate_id(value);
   // @@protoc_insertion_point(field_set:craft.RequestVoteArgs.candidate_id)
 }
@@ -1178,22 +1178,22 @@ inline void AppendEntriesArgs::set_term(uint64_t value) {
   // @@protoc_insertion_point(field_set:craft.AppendEntriesArgs.term)
 }
 
-// uint64 leader_id = 2;
+// int32 leader_id = 2;
 inline void AppendEntriesArgs::clear_leader_id() {
-  _impl_.leader_id_ = uint64_t{0u};
+  _impl_.leader_id_ = 0;
 }
-inline uint64_t AppendEntriesArgs::_internal_leader_id() const {
+inline int32_t AppendEntriesArgs::_internal_leader_id() const {
   return _impl_.leader_id_;
 }
-inline uint64_t AppendEntriesArgs::leader_id() const {
+inline int32_t AppendEntriesArgs::leader_id() const {
   // @@protoc_insertion_point(field_get:craft.AppendEntriesArgs.leader_id)
   return _internal_leader_id();
 }
-inline void AppendEntriesArgs::_internal_set_leader_id(uint64_t value) {
+inline void AppendEntriesArgs::_internal_set_leader_id(int32_t value) {
   
   _impl_.leader_id_ = value;
 }
-inline void AppendEntriesArgs::set_leader_id(uint64_t value) {
+inline void AppendEntriesArgs::set_leader_id(int32_t value) {
   _internal_set_leader_id(value);
   // @@protoc_insertion_point(field_set:craft.AppendEntriesArgs.leader_id)
 }

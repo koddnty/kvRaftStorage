@@ -247,8 +247,7 @@ static m_sylar::Task<void, m_sylar::TaskBeginExecuter> runIntegration() {
 
     // B6. 对端不可达 -> call 必须快速失败返回 RETRY，不能 hang
     //     （同时验证"配置装载 -> 建连失败 -> 快速失败"整条链路是通的）
-    // repair: 不再用 conf/rpc.json 里的 8808 来测"对端没起"（你本地跑着集群时它会误报），
-    //   改成自己组一份指向【空闲端口】的配置。
+
     {
         RpcDefine dead;
         dead.nodes = {
@@ -259,14 +258,12 @@ static m_sylar::Task<void, m_sylar::TaskBeginExecuter> runIntegration() {
         const int n = co_await c->init(dead, /*selfId=*/0);
         auto r = std::make_shared<std::string>("x");
         auto p = std::make_shared<std::string>();
-        // dfix: call 的入参是【node id】(= 1)，不是 peers 数组下标。
         //   selfId=0 被摘掉了，下标 0 现在是本机自己那格空洞 —— 传 0 会得到 UNK_NODE 而不是 RETRY。
         const CallState st = co_await c->call(1, "RaftRpc", "AppendEntries", r, p);
         check(n == 1 && st == CallState::RETRY,
               "B6. 对端不可达 -> call 返回 RETRY（快速失败）",
               "peers=" + std::to_string(n) + " state=" + std::to_string(static_cast<int>(st)));
 
-        // dfix: 顺手钉住 node id != 下标的语义：本机自己那格（空洞）必须是 UNK_NODE
         const CallState st_self = co_await c->call(0, "RaftRpc", "AppendEntries", r, p);
         check(st_self == CallState::UNK_NODE, "B7. call(自己的 id) -> UNK_NODE（空洞，不是下标 0 的对端）",
               "state=" + std::to_string(static_cast<int>(st_self)));

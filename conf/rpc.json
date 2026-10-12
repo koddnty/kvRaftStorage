@@ -17,6 +17,13 @@
     }
   ],
 
+  "kRaftTimer" : {
+    "followerElectionTimeMin" : 400,
+    "followerElectionTimeMax" : 650,
+
+    "leaderHeartBeatTime" : 150
+  },
+
   "kLengthFieldSize" : 4,
   "kMaxPayloadSize" : 67108864,
 

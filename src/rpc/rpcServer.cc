@@ -98,7 +98,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RPCServer::handleClient(m_sylar:
         loopCount++;
         // 获取请求
         std::shared_ptr<Request> req = std::make_shared<Request>();
-        m_sylar::IOState state = co_await session->co_recvRequest(*req);
+        m_sylar::IOState state = co_await session->co_recvRpcRequest(*req);
         if (state == m_sylar::IOState::TIMEOUT) {
             continue;
         }

@@ -38,9 +38,9 @@ PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORIT
 PROTOBUF_CONSTEXPR RequestVoteArgs::RequestVoteArgs(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.term_)*/uint64_t{0u}
-  , /*decltype(_impl_.candidate_id_)*/uint64_t{0u}
   , /*decltype(_impl_.last_log_index_)*/uint64_t{0u}
   , /*decltype(_impl_.last_log_term_)*/uint64_t{0u}
+  , /*decltype(_impl_.candidate_id_)*/0
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct RequestVoteArgsDefaultTypeInternal {
   PROTOBUF_CONSTEXPR RequestVoteArgsDefaultTypeInternal()
@@ -69,10 +69,10 @@ PROTOBUF_CONSTEXPR AppendEntriesArgs::AppendEntriesArgs(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.entries_)*/{}
   , /*decltype(_impl_.term_)*/uint64_t{0u}
-  , /*decltype(_impl_.leader_id_)*/uint64_t{0u}
   , /*decltype(_impl_.prev_log_index_)*/uint64_t{0u}
   , /*decltype(_impl_.prev_log_term_)*/uint64_t{0u}
   , /*decltype(_impl_.leader_commit_)*/uint64_t{0u}
+  , /*decltype(_impl_.leader_id_)*/0
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct AppendEntriesArgsDefaultTypeInternal {
   PROTOBUF_CONSTEXPR AppendEntriesArgsDefaultTypeInternal()
@@ -169,11 +169,11 @@ static const ::_pb::Message* const file_default_instances[] = {
 const char descriptor_table_protodef_types_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
   "\n\013types.proto\022\005craft\")\n\010LogEntry\022\014\n\004term"
   "\030\001 \001(\004\022\017\n\007command\030\002 \001(\014\"d\n\017RequestVoteAr"
-  "gs\022\014\n\004term\030\001 \001(\004\022\024\n\014candidate_id\030\002 \001(\004\022\026"
+  "gs\022\014\n\004term\030\001 \001(\004\022\024\n\014candidate_id\030\002 \001(\005\022\026"
   "\n\016last_log_index\030\003 \001(\004\022\025\n\rlast_log_term\030"
   "\004 \001(\004\"6\n\020RequestVoteReply\022\014\n\004term\030\001 \001(\004\022"
   "\024\n\014vote_granted\030\002 \001(\010\"\234\001\n\021AppendEntriesA"
-  "rgs\022\014\n\004term\030\001 \001(\004\022\021\n\tleader_id\030\002 \001(\004\022\026\n\016"
+  "rgs\022\014\n\004term\030\001 \001(\004\022\021\n\tleader_id\030\002 \001(\005\022\026\n\016"
   "prev_log_index\030\003 \001(\004\022\025\n\rprev_log_term\030\004 "
   "\001(\004\022 \n\007entries\030\005 \003(\0132\017.craft.LogEntry\022\025\n"
   "\rleader_commit\030\006 \001(\004\"3\n\022AppendEntriesRep"
@@ -439,15 +439,15 @@ RequestVoteArgs::RequestVoteArgs(const RequestVoteArgs& from)
   RequestVoteArgs* const _this = this; (void)_this;
   new (&_impl_) Impl_{
       decltype(_impl_.term_){}
-    , decltype(_impl_.candidate_id_){}
     , decltype(_impl_.last_log_index_){}
     , decltype(_impl_.last_log_term_){}
+    , decltype(_impl_.candidate_id_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
   ::memcpy(&_impl_.term_, &from._impl_.term_,
-    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.last_log_term_) -
-    reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.last_log_term_));
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.candidate_id_) -
+    reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.candidate_id_));
   // @@protoc_insertion_point(copy_constructor:craft.RequestVoteArgs)
 }
 
@@ -457,9 +457,9 @@ inline void RequestVoteArgs::SharedCtor(
   (void)is_message_owned;
   new (&_impl_) Impl_{
       decltype(_impl_.term_){uint64_t{0u}}
-    , decltype(_impl_.candidate_id_){uint64_t{0u}}
     , decltype(_impl_.last_log_index_){uint64_t{0u}}
     , decltype(_impl_.last_log_term_){uint64_t{0u}}
+    , decltype(_impl_.candidate_id_){0}
     , /*decltype(_impl_._cached_size_)*/{}
   };
 }
@@ -488,8 +488,8 @@ void RequestVoteArgs::Clear() {
   (void) cached_has_bits;
 
   ::memset(&_impl_.term_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&_impl_.last_log_term_) -
-      reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.last_log_term_));
+      reinterpret_cast<char*>(&_impl_.candidate_id_) -
+      reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.candidate_id_));
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -507,10 +507,10 @@ const char* RequestVoteArgs::_InternalParse(const char* ptr, ::_pbi::ParseContex
         } else
           goto handle_unusual;
         continue;
-      // uint64 candidate_id = 2;
+      // int32 candidate_id = 2;
       case 2:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
-          _impl_.candidate_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          _impl_.candidate_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -566,10 +566,10 @@ uint8_t* RequestVoteArgs::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteUInt64ToArray(1, this->_internal_term(), target);
   }
 
-  // uint64 candidate_id = 2;
+  // int32 candidate_id = 2;
   if (this->_internal_candidate_id() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_candidate_id(), target);
+    target = ::_pbi::WireFormatLite::WriteInt32ToArray(2, this->_internal_candidate_id(), target);
   }
 
   // uint64 last_log_index = 3;
@@ -605,11 +605,6 @@ size_t RequestVoteArgs::ByteSizeLong() const {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_term());
   }
 
-  // uint64 candidate_id = 2;
-  if (this->_internal_candidate_id() != 0) {
-    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_candidate_id());
-  }
-
   // uint64 last_log_index = 3;
   if (this->_internal_last_log_index() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_last_log_index());
@@ -618,6 +613,11 @@ size_t RequestVoteArgs::ByteSizeLong() const {
   // uint64 last_log_term = 4;
   if (this->_internal_last_log_term() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_last_log_term());
+  }
+
+  // int32 candidate_id = 2;
+  if (this->_internal_candidate_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(this->_internal_candidate_id());
   }
 
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
@@ -641,14 +641,14 @@ void RequestVoteArgs::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const 
   if (from._internal_term() != 0) {
     _this->_internal_set_term(from._internal_term());
   }
-  if (from._internal_candidate_id() != 0) {
-    _this->_internal_set_candidate_id(from._internal_candidate_id());
-  }
   if (from._internal_last_log_index() != 0) {
     _this->_internal_set_last_log_index(from._internal_last_log_index());
   }
   if (from._internal_last_log_term() != 0) {
     _this->_internal_set_last_log_term(from._internal_last_log_term());
+  }
+  if (from._internal_candidate_id() != 0) {
+    _this->_internal_set_candidate_id(from._internal_candidate_id());
   }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
@@ -668,8 +668,8 @@ void RequestVoteArgs::InternalSwap(RequestVoteArgs* other) {
   using std::swap;
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(RequestVoteArgs, _impl_.last_log_term_)
-      + sizeof(RequestVoteArgs::_impl_.last_log_term_)
+      PROTOBUF_FIELD_OFFSET(RequestVoteArgs, _impl_.candidate_id_)
+      + sizeof(RequestVoteArgs::_impl_.candidate_id_)
       - PROTOBUF_FIELD_OFFSET(RequestVoteArgs, _impl_.term_)>(
           reinterpret_cast<char*>(&_impl_.term_),
           reinterpret_cast<char*>(&other->_impl_.term_));
@@ -910,16 +910,16 @@ AppendEntriesArgs::AppendEntriesArgs(const AppendEntriesArgs& from)
   new (&_impl_) Impl_{
       decltype(_impl_.entries_){from._impl_.entries_}
     , decltype(_impl_.term_){}
-    , decltype(_impl_.leader_id_){}
     , decltype(_impl_.prev_log_index_){}
     , decltype(_impl_.prev_log_term_){}
     , decltype(_impl_.leader_commit_){}
+    , decltype(_impl_.leader_id_){}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
   ::memcpy(&_impl_.term_, &from._impl_.term_,
-    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.leader_commit_) -
-    reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_commit_));
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.leader_id_) -
+    reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_id_));
   // @@protoc_insertion_point(copy_constructor:craft.AppendEntriesArgs)
 }
 
@@ -930,10 +930,10 @@ inline void AppendEntriesArgs::SharedCtor(
   new (&_impl_) Impl_{
       decltype(_impl_.entries_){arena}
     , decltype(_impl_.term_){uint64_t{0u}}
-    , decltype(_impl_.leader_id_){uint64_t{0u}}
     , decltype(_impl_.prev_log_index_){uint64_t{0u}}
     , decltype(_impl_.prev_log_term_){uint64_t{0u}}
     , decltype(_impl_.leader_commit_){uint64_t{0u}}
+    , decltype(_impl_.leader_id_){0}
     , /*decltype(_impl_._cached_size_)*/{}
   };
 }
@@ -964,8 +964,8 @@ void AppendEntriesArgs::Clear() {
 
   _impl_.entries_.Clear();
   ::memset(&_impl_.term_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&_impl_.leader_commit_) -
-      reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_commit_));
+      reinterpret_cast<char*>(&_impl_.leader_id_) -
+      reinterpret_cast<char*>(&_impl_.term_)) + sizeof(_impl_.leader_id_));
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -983,10 +983,10 @@ const char* AppendEntriesArgs::_InternalParse(const char* ptr, ::_pbi::ParseCont
         } else
           goto handle_unusual;
         continue;
-      // uint64 leader_id = 2;
+      // int32 leader_id = 2;
       case 2:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
-          _impl_.leader_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          _impl_.leader_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -1063,10 +1063,10 @@ uint8_t* AppendEntriesArgs::_InternalSerialize(
     target = ::_pbi::WireFormatLite::WriteUInt64ToArray(1, this->_internal_term(), target);
   }
 
-  // uint64 leader_id = 2;
+  // int32 leader_id = 2;
   if (this->_internal_leader_id() != 0) {
     target = stream->EnsureSpace(target);
-    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_leader_id(), target);
+    target = ::_pbi::WireFormatLite::WriteInt32ToArray(2, this->_internal_leader_id(), target);
   }
 
   // uint64 prev_log_index = 3;
@@ -1123,11 +1123,6 @@ size_t AppendEntriesArgs::ByteSizeLong() const {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_term());
   }
 
-  // uint64 leader_id = 2;
-  if (this->_internal_leader_id() != 0) {
-    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_leader_id());
-  }
-
   // uint64 prev_log_index = 3;
   if (this->_internal_prev_log_index() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_prev_log_index());
@@ -1141,6 +1136,11 @@ size_t AppendEntriesArgs::ByteSizeLong() const {
   // uint64 leader_commit = 6;
   if (this->_internal_leader_commit() != 0) {
     total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_leader_commit());
+  }
+
+  // int32 leader_id = 2;
+  if (this->_internal_leader_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(this->_internal_leader_id());
   }
 
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
@@ -1165,9 +1165,6 @@ void AppendEntriesArgs::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, cons
   if (from._internal_term() != 0) {
     _this->_internal_set_term(from._internal_term());
   }
-  if (from._internal_leader_id() != 0) {
-    _this->_internal_set_leader_id(from._internal_leader_id());
-  }
   if (from._internal_prev_log_index() != 0) {
     _this->_internal_set_prev_log_index(from._internal_prev_log_index());
   }
@@ -1176,6 +1173,9 @@ void AppendEntriesArgs::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, cons
   }
   if (from._internal_leader_commit() != 0) {
     _this->_internal_set_leader_commit(from._internal_leader_commit());
+  }
+  if (from._internal_leader_id() != 0) {
+    _this->_internal_set_leader_id(from._internal_leader_id());
   }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
@@ -1196,8 +1196,8 @@ void AppendEntriesArgs::InternalSwap(AppendEntriesArgs* other) {
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   _impl_.entries_.InternalSwap(&other->_impl_.entries_);
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(AppendEntriesArgs, _impl_.leader_commit_)
-      + sizeof(AppendEntriesArgs::_impl_.leader_commit_)
+      PROTOBUF_FIELD_OFFSET(AppendEntriesArgs, _impl_.leader_id_)
+      + sizeof(AppendEntriesArgs::_impl_.leader_id_)
       - PROTOBUF_FIELD_OFFSET(AppendEntriesArgs, _impl_.term_)>(
           reinterpret_cast<char*>(&_impl_.term_),
           reinterpret_cast<char*>(&other->_impl_.term_));
