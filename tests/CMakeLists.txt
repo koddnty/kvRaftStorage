@@ -23,6 +23,12 @@ target_compile_definitions(rpcConfigTest PRIVATE KVRAFT_SRC_DIR="${CMAKE_SOURCE_
 # 注意：rpc/peerConcurrencyTest.cc 是上一版（Peer 类）的测试，用的是已废弃的 API，
 #       没有登记在这里，所以不会被构建。要么适配到 RPCSession，要么删掉。
 
+# 分片日志文件头（元信息）：create 写头 / readHeader 读回 base_idx+entry_count /
+# updateEntryCount 就地改计数 / persist 自动 +1 / readLogFile 跳过文件头 /
+# 空文件·残头·未知版本·老格式（裸记录无头）等异常输入
+add_executable(logTest raft/logTest.cc)
+target_link_libraries(logTest PRIVATE KVStorageLib)
+
 # 单元测试（Catch2）
 find_package(Catch2 REQUIRED)
 

@@ -72,7 +72,6 @@ bool NodeState::becomeLeader() {
     m_node_state = State::Leader;
     m_voted_for = m_id;
 
-    // TODO 启动leader心跳定时器
     return true;
 }
 
@@ -201,7 +200,7 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
         [node = shared_from_this()](m_sylar::TimeTask::ptr task) -> m_sylar::Task<void> {
             // TODO 调度心跳处理函数
             M_SYLAR_LOG_INFO(g_logger) << "leader 调度了心跳处理函数";
-            node->getClient()->call("craft", "appendEntries", );
+            // node->getClient()->call("craft", "appendEntries",   );
             co_return;
         }
     );
@@ -277,14 +276,12 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
             break;
         }
     }
-
     co_return;
 }
 
 
 m_sylar::Task<void> RaftNode::handleRequestVote
         (std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
-
     // 解析请求
     RequestVoteArgs req_vote;
     req_vote.ParseFromString(req->data());
@@ -310,4 +307,22 @@ m_sylar::Task<void> RaftNode::handleRequestVote
     }
     co_return ;
 }
+
+
+m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries() {
+    co_return;
+}
+
+
+m_sylar::Task<void> RaftNode::handleAppendEntries
+            (std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
+    co_return;
+}
+
+
+m_sylar::Task<void> RaftNode::handleHeartBeat() {
+    co_return;
+}
+
+
 }

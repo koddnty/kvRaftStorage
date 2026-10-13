@@ -4,20 +4,10 @@
 #include <coroutine/coro20/task.hpp>
 
 #include "rpc/rpcManager.hpp"
+#include "log.hpp"          // dfix: NodeLog 定义在 log.hpp；不 include 的话 NodeState/RaftNode 里用不了它
 #include "types.pb.h"
 
 namespace craft {
-
-// 日志管理 ----------------------------------------
-class NodeLog {
-public:
-    using ptr = std::shared_ptr<NodeLog>;
-    [[nodiscard]] size_t getLastLogIdx() const { return m_last_log_idx; }
-    [[nodiscard]] size_t getLastLogTerm() const { return m_last_log_term; }
-private:
-    size_t m_last_log_term {0};                                     // 最新未提交日志term
-    size_t m_last_log_idx {0};                                        // 最新未提交日志编号
-};
 
 
 
@@ -94,7 +84,7 @@ public:
 protected:
     // 心跳处理，由appendEntries路由到此
     m_sylar::Task<void> handleHeartBeat();
-
+    // TODO 2
 private:
     int m_id {-1};                                                              // 节点id
     NodeState m_state;
