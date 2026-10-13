@@ -8,6 +8,7 @@
 
 #include <sylar/basic/address.h>
 #include <sylar/basic/config.h>
+#include "definations.hpp"
 
 /**
  * @brief rpc 模块的配置文件反序列化
@@ -43,7 +44,7 @@ namespace RPC {
 /// conf/rpc.json —— rpc 模块的全部配置都在这一个文件里
 inline constexpr const char* kRpcConfPath = "conf/rpc.json";
 /// 该文件使用的 config_id（★ 一个 id 只能装一个文件，见上面坑 2）
-inline constexpr int kRpcConfId = 2;
+
 /// 节点列表在文件里的路径（getJsonValueByPath 用点分隔；支持 "a.b.0.c" 这种数组下标）
 inline constexpr const char* kRpcNodesPath = "peers";
 
@@ -83,25 +84,7 @@ m_sylar::IPAddress::ptr toAddress(const NodeDefine& node);
 
 // ---------------------------------------------------------------------------
 // rpc 模块的全部可调项 —— 都从 conf/rpc.json 读，配置文件里的 key 和这里的变量名一一对应。
-//
-// ★ 为什么是"ConfigVar 全局 + 访问函数"，而不是
-//       static int kRpcTimeoutUs = ConfigManager::LookUp("kRpcTimeoutUs", 100000, 2)->getValue();
-//   ConfigVar 在构造时读一次 json，并给自己挂一个监听器（config.h:174-207）。
-//   而 namespace 作用域的 static 是在 main 之前构造的：那时 LoadJson 还没跑，
-//   读到的只能是默认值；而且 `LookUp(...)` 返回的是个【临时】shared_ptr，
-//   整个语句一结束 ConfigVar 就被析构、监听器也一起摘掉 —— 快照就此冻结。
-//   结果：配置文件里写什么都无效，而且不报错、不打日志，纯靠肉眼看出来。
-//   所以这里把 ConfigVar 本人留在 inline 全局里（活到进程结束，监听器一直挂着），
-//   取值统一走下面那几个函数：
-//       静态初始化阶段构造 → 拿默认值
-//       loadRpcConfig() 里 LoadJson → 监听器把文件里的值刷进 m_val
-//       之后 rpcTimeoutUs() 等拿到的就是文件值 ✓
-//   白捡一个好处：再 LoadJson 一次就热更新，不用重启。
-//
-//   调用时机：必须在 loadRpcConfig()（也就是 LoadJson）之后取，别在 static 初始化里取。
-//   正常路径 RPCClient::init() 里是先 loadRpcConfig() 再建连，所以没问题；
-//   绕过 init() 直接裸用 Frame/Parser/RPCSession 的地方（单元测试）拿到的是默认值。
-// ---------------------------------------------------------------------------
+
 inline m_sylar::ConfigVar<size_t>::ptr g_kLengthFieldSize =
     m_sylar::ConfigManager::LookUp<size_t>("kLengthFieldSize", 4, kRpcConfId,
                                            "帧长度头字节数（★ 线上协议，两端必须一致）");
@@ -130,13 +113,17 @@ inline m_sylar::ConfigVar<unsigned int>::ptr g_kReconnectMaxBackoffMs =
     m_sylar::ConfigManager::LookUp<unsigned int>("kReconnectMaxBackoffMs", 20, kRpcConfId,
                                                  "重连退避上限(ms)");
 
+inline m_sylar::ConfigVar<int64_t>::ptr g_kServerRecvTimeout =
+    m_sylar::ConfigManager::LookUp<int64_t>("kServerRecvTimeout", 30000000, kRpcConfId,
+                                                 "服务端接收超us");
 /// 取值统一走这几个函数（原因见上面那段说明）
-inline size_t       kLengthFieldSize()            { return g_kLengthFieldSize->getValue(); }
-inline size_t       kMaxPayloadSize()             { return g_kMaxPayloadSize->getValue(); }
-inline int64_t      kRpcTimeoutUs()               { return g_kRpcTimeoutUs->getValue(); }
-inline int          kTimeoutToDisconnectCount()   { return g_kTimeoutToDisconnectCount->getValue(); }
-inline unsigned int kReconnectBackoffMs()         { return g_kReconnectBackoffMs->getValue(); }
-inline unsigned int kReconnectMaxBackoffMs()      { return g_kReconnectMaxBackoffMs->getValue(); }
+inline size_t       kLengthFieldSize()              { return g_kLengthFieldSize->getValue(); }
+inline size_t       kMaxPayloadSize()               { return g_kMaxPayloadSize->getValue(); }
+inline int64_t      kRpcTimeoutUs()                 { return g_kRpcTimeoutUs->getValue(); }
+inline int          kTimeoutToDisconnectCount()     { return g_kTimeoutToDisconnectCount->getValue(); }
+inline unsigned int kReconnectBackoffMs()           { return g_kReconnectBackoffMs->getValue(); }
+inline unsigned int kReconnectMaxBackoffMs()        { return g_kReconnectMaxBackoffMs->getValue(); }
+inline int64_t      kServerRecvTimeout()            { return g_kServerRecvTimeout->getValue(); }
 /// 尝试次数至少为 1：配置里写 0 或负数时别退化成"永远不重连"
 inline int          kReconnectMaxAttempts() {
     const int v = g_kReconnectMaxAttempts->getValue();

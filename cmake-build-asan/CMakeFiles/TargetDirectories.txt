@@ -1,0 +1,11 @@
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/CMakeFiles/KVStorageLib.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/CMakeFiles/kvRaft.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/CMakeFiles/edit_cache.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/CMakeFiles/rebuild_cache.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/rpcFrameTest.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/rpcSessionTest.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/rpcClientTest.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/rpcConfigTest.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/unitTests.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/edit_cache.dir
+/home/koddnty/user/projects/KVraft/KVRaftStorage/cmake-build-asan/tests/CMakeFiles/rebuild_cache.dir
