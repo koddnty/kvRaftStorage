@@ -14,10 +14,21 @@
       "id" : 2,
       "ip" : "127.0.0.1",
       "port" : 8810
+    },
+    {
+      "id" : 3,
+      "ip" : "127.0.0.1",
+      "port" : 8811
     }
   ],
 
   "kRaftTimer" : {
+    "followerElectionTimeMin" : 2500,
+    "followerElectionTimeMax" : 5000,
+
+    "leaderHeartBeatTime" : 750
+  },
+  "kRaftTimerDefault" : {
     "followerElectionTimeMin" : 400,
     "followerElectionTimeMax" : 650,
 

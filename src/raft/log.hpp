@@ -94,7 +94,12 @@ public:
     bool commitLog(uint64_t idx);               // 提交最后一条持久化为提交日志， 推动commit_idx, false：提交失败，true：成功或已经提交
 
 
+
     // 信息处理
+    void setCommitIndex(const uint64_t idx) {m_commit_idx = idx; }
+
+    bool matchLog(uint64_t prev_log_index, uint64_t prev_log_term) const;
+
     [[nodiscard]] uint64_t getLastLogIdx() const { return m_last_log_idx; }
     [[nodiscard]] uint64_t getLastLogTerm() const { return m_last_log_term; }
     [[nodiscard]] uint64_t getCommitIndex() const {return m_commit_idx;}

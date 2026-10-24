@@ -23,6 +23,12 @@ public:
         Leader
     };
 
+    enum class VoteState {
+        RETRY,
+        SUCCESS,
+        FAILED
+    };
+
     NodeState() = default;
     ~NodeState() = default;
 
@@ -32,13 +38,16 @@ public:
     bool becomeCandidate();                     // follower
     bool becomeLeader();                        // candidate
 
-    bool gainVote(int id, size_t term);
-    bool castVote(int id, size_t term, const NodeLog& log,size_t last_log_index, size_t last_log_term);
+    VoteState gainVote(int id, size_t term); // 从id节点获得了投票
+    VoteState castVote(int id, size_t term, const NodeLog& log,size_t last_log_index, size_t last_log_term); // 给身在term的节点一票
+
+    void setTerm(const size_t term) {m_term = term;}
 
     [[nodiscard]] State getState() const {return m_node_state;}
     [[nodiscard]] int getId() const {return m_id;}
     [[nodiscard]] size_t getTerm() const { return m_term; }
     [[nodiscard]] int getVoteCount() const { return m_vote_count.load(); }
+    [[nodiscard]] int getNodeCount() const {return m_votes.size(); }
 
 private:
     State m_node_state {State::InValid};                         // 节点核心身份
@@ -73,7 +82,7 @@ public:
     m_sylar::Task<void> handleRequestVote(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
     // log处理
-    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries();        // leadre心跳发送
+    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(std::shared_ptr<AppendEntriesArgs> entry);        // leadre心跳发送
     m_sylar::Task<void> handleAppendEntries(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
 
@@ -81,10 +90,19 @@ public:
     [[nodiscard]] NodeState::State getState() const {return m_state.getState();}
     [[nodiscard]] RPC::RPCClient::ptr getClient() const {return m_mgr->getClient();}
 
+
+
 protected:
     // 心跳处理，由appendEntries路由到此
-    m_sylar::Task<void> handleHeartBeat();
-    // TODO 2
+    m_sylar::Task<void, m_sylar::TaskBeginExecuter> heartBeat();
+    m_sylar::Task<AppendEntriesReply> handleHeartBeat(const AppendEntriesArgs& entry);
+
+protected:
+    m_sylar::Task<bool>  becomeFollower(uint64_t term);
+    m_sylar::Task<bool>  becomeCandidate();
+    m_sylar::Task<bool>  becomeLeader();
+
+
 private:
     int m_id {-1};                                                              // 节点id
     NodeState m_state;
@@ -92,6 +110,8 @@ private:
     size_t m_node_count {0};                                                    // 总节点数目
     std::atomic<int> m_rpc_state {0};           // -1 错误, 0 未初始化， 1 未开始， 2 已启动， 3 stop
     craft::RPCManager* m_mgr {nullptr};
+
+    std::vector<NodeState> m_peers_state;      // 对端节点状态
 
     // 定时器设置
     uint64_t m_recent_leader_heart {0};

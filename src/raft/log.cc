@@ -406,4 +406,16 @@ bool NodeLog::commitLog(uint64_t idx) {
 }
 
 
+
+bool NodeLog::matchLog(uint64_t prev_log_index, uint64_t prev_log_term) const {
+    if (prev_log_index == 0) {
+        return true;
+    }
+
+    if (prev_log_index > m_log_entries.size()) {
+        return false;
+    }
+
+    return m_log_entries[prev_log_index - 1].getEntry().term() == prev_log_term;
+}
 }
