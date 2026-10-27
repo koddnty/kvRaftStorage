@@ -166,27 +166,6 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
         co_return;
     }
 
-
-    // 路由注册
-    // 投票请求
-    RPCManager::GetInstanceWithOutInit()->getServer()->
-        registeRoute("craft", "requestVote",std::bind(
-            &RaftNode::handleRequestVote,
-            this,
-            std::placeholders::_1,
-            std::placeholders::_2
-    ));
-
-    // appendEntries
-    RPCManager::GetInstanceWithOutInit()->getServer()->
-        registeRoute("craft", "appendEntries",std::bind(
-            &RaftNode::handleAppendEntries,
-            this,
-            std::placeholders::_1,
-            std::placeholders::_2
-    ));
-
-
     // 初始化定时器
     // 配置节点定时器时间
     m_recent_leader_heart = m_sylar::GetCurrentTime_ms();
@@ -225,6 +204,25 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
     );
 
 
+    // 路由注册
+    // 投票请求
+    RPCManager::GetInstanceWithOutInit()->getServer()->
+        registeRoute("craft", "requestVote",std::bind(
+            &RaftNode::handleRequestVote,
+            this,
+            std::placeholders::_1,
+            std::placeholders::_2
+    ));
+
+    // appendEntries
+    RPCManager::GetInstanceWithOutInit()->getServer()->
+        registeRoute("craft", "appendEntries",std::bind(
+            &RaftNode::handleAppendEntries,
+            this,
+            std::placeholders::_1,
+            std::placeholders::_2
+    ));
+
     // 其他变量设置
     m_rpc_state = 1;
     co_return;
@@ -251,11 +249,13 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
         M_SYLAR_LOG_ERROR(g_logger) << "bad raft node state: not started";
         co_return;
     }
+
+
+    // 加锁
+    m_sylar::CoUniqueLock w_lock(m_mutex);
+    co_await w_lock.lock();
     // 成为candidatte
     co_await becomeCandidate();
-
-
-    // 轮训所有节点, 发送成为leader的请求.
     // 装配请求
     auto req_bytes = std::make_shared<std::string>();
     craft::RequestVoteArgs req_vote;
@@ -265,6 +265,11 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
     req_vote.set_last_log_term(m_log.getLastLogTerm());
     *req_bytes = req_vote.SerializeAsString();
 
+
+
+    w_lock.unlock();
+
+    // 轮训所有节点, 发送成为leader的请求.
     auto resp_bytes = std::make_shared<std::string>();
     // TODO 改为并行发送请求
     for (int i = 0; i < m_node_count; i++) {
@@ -277,6 +282,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
         }
 
         // resp 解析
+        co_await w_lock.lock();
         RequestVoteReply reply;
         reply.ParseFromString(*resp_bytes);
         if (reply.vote_granted() == true) {
@@ -293,7 +299,6 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
                     co_return;
                 }
             }
-
         }
 
         // 停止检查
@@ -301,6 +306,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
             co_await becomeLeader();
             break;
         }
+        w_lock.unlock();
     }
     co_return;
 }
@@ -312,24 +318,28 @@ m_sylar::Task<void> RaftNode::handleRequestVote
     RequestVoteArgs req_vote;
     req_vote.ParseFromString(req->data());
 
-
-    // 更新状态并设置响应内容
     RequestVoteReply reply;
-    NodeState::VoteState vote_granted = NodeState::VoteState::RETRY;
-    while (vote_granted == NodeState::VoteState::RETRY) {
-        vote_granted = m_state.castVote(req_vote.candidate_id(), req_vote.term(),
-                     m_log,
-                     req_vote.last_log_index(), req_vote.last_log_term());
+    // 节点状态设置与响应构建
+    {
+        m_sylar::CoUniqueLock w_lock(m_mutex);
+        co_await w_lock.lock();
+        // 更新状态并设置响应内容
+        NodeState::VoteState vote_granted = NodeState::VoteState::RETRY;
+        while (vote_granted == NodeState::VoteState::RETRY) {
+            vote_granted = m_state.castVote(req_vote.candidate_id(), req_vote.term(),
+                         m_log,
+                         req_vote.last_log_index(), req_vote.last_log_term());
+        }
+        reply.set_vote_granted(vote_granted == NodeState::VoteState::SUCCESS);
+        reply.set_term(req_vote.term());
+
+        if (vote_granted == NodeState::VoteState::SUCCESS) {
+            // 定时器改变
+            co_await becomeFollower(req_vote.term());
+        }
     }
-    reply.set_vote_granted(vote_granted == NodeState::VoteState::SUCCESS);
-    reply.set_term(req_vote.term());
 
-    if (vote_granted == NodeState::VoteState::SUCCESS) {
-        // 定时器改变
-        co_await becomeFollower(req_vote.term());
-    }
-
-
+    // 响应回复
     RPC::Response resp;
     resp.set_id(req->id());
     resp.set_code(static_cast<int>(RPC::RpcCode::OK));
@@ -366,16 +376,20 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(std::sha
         reply.ParseFromString(*resp_bytes);     // 响应
 
         // TODO 对响应处理, 如对方term大...
-        if (reply.term() > m_state.getTerm()) {     // 对方term更大
-            // TODO 回退至follower
-            co_await becomeFollower(reply.term());
-            co_return;
-        }
-        else if (!reply.success()) {        // 对方term和自己一样但拒绝了，需回退日志
-            // TODO 逐次回退到最近未同步
-        }
-        else {      // 同步成功，等待下次同步
-            // TODO 继续同步逻辑
+        {
+            m_sylar::CoUniqueLock w_lock(m_mutex);
+            co_await w_lock.lock();
+            if (reply.term() > m_state.getTerm()) {     // 对方term更大
+                // TODO 回退至follower
+                co_await becomeFollower(reply.term());
+                co_return;
+            }
+            else if (!reply.success()) {        // 对方term和自己一样但拒绝了，需回退日志
+                // TODO 逐次回退到最近未同步
+            }
+            else {      // 同步成功，等待下次同步
+                // TODO 继续同步逻辑
+            }
         }
     }
     co_return;
@@ -387,34 +401,54 @@ m_sylar::Task<void> RaftNode::handleAppendEntries
     // 日志处理函数
     AppendEntriesArgs entry;
     entry.ParseFromString(req->data());
+    // 心跳分支
     if (entry.entries().size() == 0) {    // 心跳entry
-        AppendEntriesReply reply = co_await handleHeartBeat(entry);
         RPC::Response resp;
-        resp.set_id(req->id());
-        resp.set_code(static_cast<int>(RPC::RpcCode::OK));
-        resp.set_data(reply.SerializeAsString());
+        {
+            m_sylar::CoUniqueLock w_lock(m_mutex);
+            co_await w_lock.lock();
+            AppendEntriesReply reply = co_await handleHeartBeat(entry);
+            resp.set_id(req->id());
+            resp.set_code(static_cast<int>(RPC::RpcCode::OK));
+            resp.set_data(reply.SerializeAsString());
+        }
+
         co_await session->co_sendRpcMessage(resp);
         co_return;
     }
 
-    // TODO 日志处理逻辑
-    M_SYLAR_LOG_INFO(g_logger) << "暂无日志处理逻辑";
+    // TODO 日志处理
+    {
+        m_sylar::CoUniqueLock w_lock(m_mutex);
+        co_await w_lock.lock();
+        M_SYLAR_LOG_INFO(g_logger) << "暂无日志处理逻辑";
+    }
     co_return;
 }
 
 
 m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
-    // 状态检查
-    if (m_state.getState() != NodeState::State::Leader) {
-        co_return;
+
+    // 心跳构造
+    std::shared_ptr<AppendEntriesArgs> entries = std::make_shared<AppendEntriesArgs>();
+
+    {
+        m_sylar::CoUniqueLock w_lock(m_mutex);
+        co_await w_lock.lock();
+        // 状态检查
+        if (m_state.getState() != NodeState::State::Leader) {
+            co_return;
+        }
+
+        entries->set_term(m_state.getTerm());
+        entries->set_leader_commit(m_log.getCommitIndex());
+        entries->set_leader_id(m_id);
+        entries->set_prev_log_index(m_log.getLastLogIdx());
+        entries->set_prev_log_term(m_log.getLastLogTerm());
     }
 
-    std::shared_ptr<AppendEntriesArgs> entries = std::make_shared<AppendEntriesArgs>();
-    entries->set_term(m_state.getTerm());
-    entries->set_leader_commit(m_log.getCommitIndex());
-    entries->set_leader_id(m_id);
-    entries->set_prev_log_index(m_log.getLastLogIdx());
-    entries->set_prev_log_term(m_log.getLastLogTerm());
+
+
     m_sylar::IOManager::getInstance()->schedule(
             m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendEntries, this, entries)));
 }
@@ -461,7 +495,9 @@ m_sylar::Task<AppendEntriesReply> RaftNode::handleHeartBeat(const AppendEntriesA
 
 
 m_sylar::Task<bool> RaftNode::becomeFollower(uint64_t term) {
+
     if (m_state.getState() == NodeState::State::Follower && term == m_state.getTerm()) {
+        m_recent_leader_heart = m_sylar::GetCurrentTime_ms();
         co_return true;
     }
     if (!m_leader_timer->getIsCanceled()) {
@@ -478,6 +514,7 @@ m_sylar::Task<bool>  RaftNode::becomeCandidate() {
     // if (m_state.getState() == NodeState::State::Candidate) {
     //     co_return true;
     // }
+
     if (!m_leader_timer->getIsCanceled()) {
         m_leader_timer->cancel();
     }

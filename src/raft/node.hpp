@@ -71,7 +71,7 @@ public:
     RaftNode();
     ~RaftNode();
 
-    // 流程控制
+    // 流程控制，函数没有经过锁保护，请调用时保证
     m_sylar::Task<void> init(craft::RPC::RpcDefine& define, int node_id);
     void start();
     m_sylar::Task<void> stop();
@@ -105,20 +105,21 @@ protected:
 
 
 private:
+    m_sylar::CoMutex m_mutex;       // 资源锁
+
     int m_id {-1};                                                              // 节点id
     NodeState m_state;
     NodeLog m_log;      // 日志记录
     size_t m_node_count {0};                                                    // 总节点数目
     std::atomic<int> m_rpc_state {0};           // -1 错误, 0 未初始化， 1 未开始， 2 已启动， 3 stop
     craft::RPCManager* m_mgr {nullptr};
-
     std::vector<NodeState> m_peers_state;      // 对端节点状态
 
     // 定时器设置
-    uint64_t m_recent_leader_heart {0};
     uint64_t m_election_interval_time {0};
     m_sylar::TimeTask::ptr m_election_timer {nullptr};      // 选举定时器
     m_sylar::TimeTask::ptr m_leader_timer {nullptr};        // 成为leader后的周期定时器
+    std::atomic<uint64_t> m_recent_leader_heart {0};
 };
 
 
