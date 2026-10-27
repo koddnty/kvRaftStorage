@@ -54,6 +54,9 @@ extern AppendEntriesReplyDefaultTypeInternal _AppendEntriesReply_default_instanc
 class LogEntry;
 struct LogEntryDefaultTypeInternal;
 extern LogEntryDefaultTypeInternal _LogEntry_default_instance_;
+class PersistentState;
+struct PersistentStateDefaultTypeInternal;
+extern PersistentStateDefaultTypeInternal _PersistentState_default_instance_;
 class RequestVoteArgs;
 struct RequestVoteArgsDefaultTypeInternal;
 extern RequestVoteArgsDefaultTypeInternal _RequestVoteArgs_default_instance_;
@@ -65,6 +68,7 @@ PROTOBUF_NAMESPACE_OPEN
 template<> ::craft::AppendEntriesArgs* Arena::CreateMaybeMessage<::craft::AppendEntriesArgs>(Arena*);
 template<> ::craft::AppendEntriesReply* Arena::CreateMaybeMessage<::craft::AppendEntriesReply>(Arena*);
 template<> ::craft::LogEntry* Arena::CreateMaybeMessage<::craft::LogEntry>(Arena*);
+template<> ::craft::PersistentState* Arena::CreateMaybeMessage<::craft::PersistentState>(Arena*);
 template<> ::craft::RequestVoteArgs* Arena::CreateMaybeMessage<::craft::RequestVoteArgs>(Arena*);
 template<> ::craft::RequestVoteReply* Arena::CreateMaybeMessage<::craft::RequestVoteReply>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
@@ -236,6 +240,219 @@ class LogEntry final :
 };
 // -------------------------------------------------------------------
 
+class PersistentState final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:craft.PersistentState) */ {
+ public:
+  inline PersistentState() : PersistentState(nullptr) {}
+  ~PersistentState() override;
+  explicit PROTOBUF_CONSTEXPR PersistentState(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  PersistentState(const PersistentState& from);
+  PersistentState(PersistentState&& from) noexcept
+    : PersistentState() {
+    *this = ::std::move(from);
+  }
+
+  inline PersistentState& operator=(const PersistentState& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline PersistentState& operator=(PersistentState&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const PersistentState& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const PersistentState* internal_default_instance() {
+    return reinterpret_cast<const PersistentState*>(
+               &_PersistentState_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    1;
+
+  friend void swap(PersistentState& a, PersistentState& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(PersistentState* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(PersistentState* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  PersistentState* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<PersistentState>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const PersistentState& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const PersistentState& from) {
+    PersistentState::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(PersistentState* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "craft.PersistentState";
+  }
+  protected:
+  explicit PersistentState(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kLastLogFileNameFieldNumber = 5,
+    kMetaNameFieldNumber = 6,
+    kCurrentTermFieldNumber = 1,
+    kVotedForFieldNumber = 2,
+    kCommitIdxFieldNumber = 3,
+    kAppliedIdxFieldNumber = 4,
+  };
+  // string last_log_file_name = 5;
+  void clear_last_log_file_name();
+  const std::string& last_log_file_name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_last_log_file_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_last_log_file_name();
+  PROTOBUF_NODISCARD std::string* release_last_log_file_name();
+  void set_allocated_last_log_file_name(std::string* last_log_file_name);
+  private:
+  const std::string& _internal_last_log_file_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_last_log_file_name(const std::string& value);
+  std::string* _internal_mutable_last_log_file_name();
+  public:
+
+  // string meta_name = 6;
+  void clear_meta_name();
+  const std::string& meta_name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_meta_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_meta_name();
+  PROTOBUF_NODISCARD std::string* release_meta_name();
+  void set_allocated_meta_name(std::string* meta_name);
+  private:
+  const std::string& _internal_meta_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_meta_name(const std::string& value);
+  std::string* _internal_mutable_meta_name();
+  public:
+
+  // uint64 current_term = 1;
+  void clear_current_term();
+  uint64_t current_term() const;
+  void set_current_term(uint64_t value);
+  private:
+  uint64_t _internal_current_term() const;
+  void _internal_set_current_term(uint64_t value);
+  public:
+
+  // int64 voted_for = 2;
+  void clear_voted_for();
+  int64_t voted_for() const;
+  void set_voted_for(int64_t value);
+  private:
+  int64_t _internal_voted_for() const;
+  void _internal_set_voted_for(int64_t value);
+  public:
+
+  // uint64 commit_idx = 3;
+  void clear_commit_idx();
+  uint64_t commit_idx() const;
+  void set_commit_idx(uint64_t value);
+  private:
+  uint64_t _internal_commit_idx() const;
+  void _internal_set_commit_idx(uint64_t value);
+  public:
+
+  // uint64 applied_idx = 4;
+  void clear_applied_idx();
+  uint64_t applied_idx() const;
+  void set_applied_idx(uint64_t value);
+  private:
+  uint64_t _internal_applied_idx() const;
+  void _internal_set_applied_idx(uint64_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:craft.PersistentState)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr last_log_file_name_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr meta_name_;
+    uint64_t current_term_;
+    int64_t voted_for_;
+    uint64_t commit_idx_;
+    uint64_t applied_idx_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_types_2eproto;
+};
+// -------------------------------------------------------------------
+
 class RequestVoteArgs final :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:craft.RequestVoteArgs) */ {
  public:
@@ -284,7 +501,7 @@ class RequestVoteArgs final :
                &_RequestVoteArgs_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    1;
+    2;
 
   friend void swap(RequestVoteArgs& a, RequestVoteArgs& b) {
     a.Swap(&b);
@@ -465,7 +682,7 @@ class RequestVoteReply final :
                &_RequestVoteReply_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    3;
 
   friend void swap(RequestVoteReply& a, RequestVoteReply& b) {
     a.Swap(&b);
@@ -624,7 +841,7 @@ class AppendEntriesArgs final :
                &_AppendEntriesArgs_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    4;
 
   friend void swap(AppendEntriesArgs& a, AppendEntriesArgs& b) {
     a.Swap(&b);
@@ -836,7 +1053,7 @@ class AppendEntriesReply final :
                &_AppendEntriesReply_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    5;
 
   friend void swap(AppendEntriesReply& a, AppendEntriesReply& b) {
     a.Swap(&b);
@@ -1024,6 +1241,190 @@ inline void LogEntry::set_allocated_command(std::string* command) {
   }
 #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:craft.LogEntry.command)
+}
+
+// -------------------------------------------------------------------
+
+// PersistentState
+
+// uint64 current_term = 1;
+inline void PersistentState::clear_current_term() {
+  _impl_.current_term_ = uint64_t{0u};
+}
+inline uint64_t PersistentState::_internal_current_term() const {
+  return _impl_.current_term_;
+}
+inline uint64_t PersistentState::current_term() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.current_term)
+  return _internal_current_term();
+}
+inline void PersistentState::_internal_set_current_term(uint64_t value) {
+  
+  _impl_.current_term_ = value;
+}
+inline void PersistentState::set_current_term(uint64_t value) {
+  _internal_set_current_term(value);
+  // @@protoc_insertion_point(field_set:craft.PersistentState.current_term)
+}
+
+// int64 voted_for = 2;
+inline void PersistentState::clear_voted_for() {
+  _impl_.voted_for_ = int64_t{0};
+}
+inline int64_t PersistentState::_internal_voted_for() const {
+  return _impl_.voted_for_;
+}
+inline int64_t PersistentState::voted_for() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.voted_for)
+  return _internal_voted_for();
+}
+inline void PersistentState::_internal_set_voted_for(int64_t value) {
+  
+  _impl_.voted_for_ = value;
+}
+inline void PersistentState::set_voted_for(int64_t value) {
+  _internal_set_voted_for(value);
+  // @@protoc_insertion_point(field_set:craft.PersistentState.voted_for)
+}
+
+// uint64 commit_idx = 3;
+inline void PersistentState::clear_commit_idx() {
+  _impl_.commit_idx_ = uint64_t{0u};
+}
+inline uint64_t PersistentState::_internal_commit_idx() const {
+  return _impl_.commit_idx_;
+}
+inline uint64_t PersistentState::commit_idx() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.commit_idx)
+  return _internal_commit_idx();
+}
+inline void PersistentState::_internal_set_commit_idx(uint64_t value) {
+  
+  _impl_.commit_idx_ = value;
+}
+inline void PersistentState::set_commit_idx(uint64_t value) {
+  _internal_set_commit_idx(value);
+  // @@protoc_insertion_point(field_set:craft.PersistentState.commit_idx)
+}
+
+// uint64 applied_idx = 4;
+inline void PersistentState::clear_applied_idx() {
+  _impl_.applied_idx_ = uint64_t{0u};
+}
+inline uint64_t PersistentState::_internal_applied_idx() const {
+  return _impl_.applied_idx_;
+}
+inline uint64_t PersistentState::applied_idx() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.applied_idx)
+  return _internal_applied_idx();
+}
+inline void PersistentState::_internal_set_applied_idx(uint64_t value) {
+  
+  _impl_.applied_idx_ = value;
+}
+inline void PersistentState::set_applied_idx(uint64_t value) {
+  _internal_set_applied_idx(value);
+  // @@protoc_insertion_point(field_set:craft.PersistentState.applied_idx)
+}
+
+// string last_log_file_name = 5;
+inline void PersistentState::clear_last_log_file_name() {
+  _impl_.last_log_file_name_.ClearToEmpty();
+}
+inline const std::string& PersistentState::last_log_file_name() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.last_log_file_name)
+  return _internal_last_log_file_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PersistentState::set_last_log_file_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.last_log_file_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:craft.PersistentState.last_log_file_name)
+}
+inline std::string* PersistentState::mutable_last_log_file_name() {
+  std::string* _s = _internal_mutable_last_log_file_name();
+  // @@protoc_insertion_point(field_mutable:craft.PersistentState.last_log_file_name)
+  return _s;
+}
+inline const std::string& PersistentState::_internal_last_log_file_name() const {
+  return _impl_.last_log_file_name_.Get();
+}
+inline void PersistentState::_internal_set_last_log_file_name(const std::string& value) {
+  
+  _impl_.last_log_file_name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PersistentState::_internal_mutable_last_log_file_name() {
+  
+  return _impl_.last_log_file_name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PersistentState::release_last_log_file_name() {
+  // @@protoc_insertion_point(field_release:craft.PersistentState.last_log_file_name)
+  return _impl_.last_log_file_name_.Release();
+}
+inline void PersistentState::set_allocated_last_log_file_name(std::string* last_log_file_name) {
+  if (last_log_file_name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.last_log_file_name_.SetAllocated(last_log_file_name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.last_log_file_name_.IsDefault()) {
+    _impl_.last_log_file_name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:craft.PersistentState.last_log_file_name)
+}
+
+// string meta_name = 6;
+inline void PersistentState::clear_meta_name() {
+  _impl_.meta_name_.ClearToEmpty();
+}
+inline const std::string& PersistentState::meta_name() const {
+  // @@protoc_insertion_point(field_get:craft.PersistentState.meta_name)
+  return _internal_meta_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void PersistentState::set_meta_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.meta_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:craft.PersistentState.meta_name)
+}
+inline std::string* PersistentState::mutable_meta_name() {
+  std::string* _s = _internal_mutable_meta_name();
+  // @@protoc_insertion_point(field_mutable:craft.PersistentState.meta_name)
+  return _s;
+}
+inline const std::string& PersistentState::_internal_meta_name() const {
+  return _impl_.meta_name_.Get();
+}
+inline void PersistentState::_internal_set_meta_name(const std::string& value) {
+  
+  _impl_.meta_name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* PersistentState::_internal_mutable_meta_name() {
+  
+  return _impl_.meta_name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* PersistentState::release_meta_name() {
+  // @@protoc_insertion_point(field_release:craft.PersistentState.meta_name)
+  return _impl_.meta_name_.Release();
+}
+inline void PersistentState::set_allocated_meta_name(std::string* meta_name) {
+  if (meta_name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.meta_name_.SetAllocated(meta_name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.meta_name_.IsDefault()) {
+    _impl_.meta_name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:craft.PersistentState.meta_name)
 }
 
 // -------------------------------------------------------------------
@@ -1345,6 +1746,8 @@ inline void AppendEntriesReply::set_success(bool value) {
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

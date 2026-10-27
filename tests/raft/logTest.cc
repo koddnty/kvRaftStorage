@@ -1,16 +1,15 @@
 //
-// 分片日志文件头（元信息）测试
-// changed: 本文件为新增的测试（分片文件头 + NodeLog::persistLog/commitLog）
+// 分片日志 + 状态元信息 测试（对应 src/raft/log.{hpp,cc} 的当前实现）
 //
-//   覆盖：create 写头 / readHeader 读回 base_idx+entry_count / persist 自动计数 /
-//         readLogFile 跳过文件头 / 重开文件仍然一致 / 坏 fd / 空文件 / 截断文件 /
-//         版本不认识 / 老格式（裸记录无头）兼容 / create 的"重建"语义
+//   覆盖：初始化/空日志约定、追加与落盘（幂等/越界）、查询（term/区间/匹配）、
+//         重启恢复、崩溃尾部修复、冲突截断（含"已提交不可截断"）、
+//         按字节切段 + 内存窗口（只有最后一段常驻、旧段走磁盘）、coLoadLogSeg/coFreeLogSeg、
+//         StateMeta 三态加载 / 原子落盘 / 损坏拒绝
 //
-//   注意：本文件的 co_await 全都落在"同步就能完成"的 Task 上（纯磁盘 IO，没有真异步），
-//   所以 runAll() 这个 eager Task 会在 main 里一路跑到 co_return，不需要 IOManager。
-//   以后要是在这里加真异步操作，得改成 create_coro + IOManager 调度。
+//   注意：本文件的 co_await 全都落在"同步就能完成"的 Task 上（NodeLog 内部是同步系统调用，
+//   不会真正挂起），所以 runAll() 这个 eager Task 会一路跑到 co_return，不需要 IOManager。
+//   以后若把日志 I/O 改成异步，这里要换成 create_coro + IOManager 调度。
 //
-#include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -27,7 +26,7 @@ using namespace craft;
 
 static int g_pass = 0;
 static int g_fail = 0;
-static std::string g_path;
+static std::string g_dir;
 
 static void check(bool ok, const std::string& name, const std::string& detail = "") {
     if (ok) {
@@ -39,371 +38,195 @@ static void check(bool ok, const std::string& name, const std::string& detail = 
     }
 }
 
-static std::string u64s(uint64_t v) { return std::to_string(v); }
+static std::string S(uint64_t v) { return std::to_string(v); }
 
-static int openNew() {
-    return ::open(g_path.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
-}
-
-static int openExist() {
-    return ::open(g_path.c_str(), O_RDWR);
-}
-
-static uint64_t sizeOf(int fd) {
+static uint64_t fileSize(const std::string& path) {
     struct stat st{};
-    if (::fstat(fd, &st) < 0) {
-        return 0;
-    }
-    return static_cast<uint64_t>(st.st_size);
+    return (::stat(path.c_str(), &st) == 0) ? static_cast<uint64_t>(st.st_size) : 0;
 }
 
-static uint64_t readU64At(int fd, off_t off) {
-    char buf[8] = {};
-    if (::pread(fd, buf, sizeof(buf), off) != static_cast<ssize_t>(sizeof(buf))) {
-        return 0;
-    }
-    uint64_t v = 0;
-    for (int i = 0; i < 8; ++i) {
-        v = (v << 8) | static_cast<uint8_t>(buf[i]);
-    }
-    return v;
-}
-
-// 造一条"老格式"裸记录：没有任何文件头，就是 [uint32 大端长度][protobuf]
-static void appendRawRecord(int fd, uint64_t term, const std::string& command) {
+static LogEntry mkEntry(uint64_t term, const std::string& command) {
     LogEntry e;
     e.set_term(term);
     e.set_command(command);
-    const std::string data = e.SerializeAsString();
-    const uint32_t len = htonl(static_cast<uint32_t>(data.size()));
-    const ssize_t w1 = ::write(fd, &len, sizeof(len));
-    const ssize_t w2 = ::write(fd, data.data(), data.size());
-    (void)w1;
-    (void)w2;
-}
-
-static uint64_t recordBytes(const std::string& command, uint64_t term) {
-    LogEntry e;
-    e.set_term(term);
-    e.set_command(command);
-    return sizeof(uint32_t) + e.SerializeAsString().size();
+    return e;
 }
 
 
 static m_sylar::Task<void> runAll() {
-    // ============================== A. create 写文件头 ==============================
-    std::printf("A. create：写文件头元信息\n");
+    // ============================== A. 初始化 / 空日志约定 ==============================
+    std::printf("A. 初始化与空日志约定\n");
+    NodeLog log;
+    check(co_await log.init(7) == m_sylar::IOState::SUCCESS, "A1. init(7) 空目录成功");
+    check(log.getLastLogIdx() == 0 && log.getFirstIdx() == 1 && log.getLastLogTerm() == 0,
+          "A2. 空日志约定：last=0, first=1, last_term=0",
+          "last=" + S(log.getLastLogIdx()) + " first=" + S(log.getFirstIdx()));
+    check(log.getPersistIndex() == 0 && log.getCommitIndex() == 0, "A3. 位点初始为 0");
+    check(log.matchLog(0, 0), "A4. matchLog(0,0) == true（哨兵）");
+
+    // ============================== B. 追加 / 落盘 ==============================
+    std::printf("B. 追加与落盘\n");
+    for (int i = 1; i <= 5; ++i) {
+        log.appendLog(mkEntry(static_cast<uint64_t>(i), "cmd" + std::to_string(i)));
+    }
+    check(log.getLastLogIdx() == 5 && log.getLastLogTerm() == 5, "B1. appendLog 5 条后 last=5, term=5");
+    check(log.getPersistIndex() == 0, "B2. 落盘前 persistIdx 仍为 0");
+    check(log.persistLog(5) == m_sylar::IOState::SUCCESS, "B3. persistLog(5) 成功");
+    check(log.getPersistIndex() == 5, "B4. persistIdx 推进到 5", "persist=" + S(log.getPersistIndex()));
+    check(!log.getEntriesFrom(1, 5).empty(), "B5. 落盘后能读回内容");
+    check(log.persistLog(5) == m_sylar::IOState::SUCCESS, "B6. persistLog 重复调用幂等");
+    check(log.persistLog(6) == m_sylar::IOState::FAILED, "B7. persistLog(6) 超过 last -> FAILED");
+    check(log.persistLog(2) == m_sylar::IOState::SUCCESS, "B8. persistLog(2)（已落盘区间）-> 幂等 SUCCESS");
+
+    // ============================== C. 查询 ==============================
+    std::printf("C. 查询（term / 区间 / 匹配）\n");
+    auto t3 = log.getTermAt(3);
+    check(t3.has_value() && *t3 == 3, "C1. getTermAt(3) == 3", t3 ? S(*t3) : "nullopt");
     {
-        const int fd = openNew();
-        check(fd >= 0, "A0. open 成功", g_path);
-        if (fd < 0) {
-            co_return;
+        auto t0 = log.getTermAt(0);
+        check(t0.has_value() && *t0 == 0, "C2. getTermAt(0) == 0（哨兵）");
+    }
+    check(!log.getTermAt(9).has_value(), "C3. getTermAt(9) == nullopt（越界）");
+    check(log.matchLog(5, 5) && !log.matchLog(5, 4), "C4. matchLog 命中 / 不命中");
+    check(!log.matchLog(9, 1), "C5. matchLog(9,1) == false（本地没这么长）");
+    {
+        auto es = log.getEntriesFrom(2, 3);
+        check(es.size() == 3 && es.front().command() == "cmd2" && es.back().command() == "cmd4",
+              "C6. getEntriesFrom(2,3) 取到 cmd2..cmd4", "n=" + S(es.size()));
+    }
+    check(log.getEntriesFrom(9, 3).empty(), "C7. getEntriesFrom 越界 -> 空");
+    check(log.getEntriesFrom(1, 100).size() == 5, "C8. count 超过剩余条数时自动截到 last");
+
+    // ============================== D. 提交位点 ==============================
+    std::printf("D. 提交位点（仅内存）\n");
+    check(log.commitLog(3), "D1. commitLog(3) == true");
+    check(log.getCommitIndex() == 3, "D2. commitIndex == 3");
+    check(!log.commitLog(9), "D3. commitLog(9)（无此日志）== false");
+    check(log.commitLog(3), "D4. commitLog 重复调用 == true（已提交）");
+
+    // ============================== E. 重启恢复 ==============================
+    std::printf("E. 重启恢复\n");
+    NodeLog log2;
+    check(co_await log2.init(7) == m_sylar::IOState::SUCCESS, "E1. 重启 init 成功");
+    check(log2.getLastLogIdx() == 5 && log2.getLastLogTerm() == 5, "E2. 恢复 last=5, last_term=5",
+          "last=" + S(log2.getLastLogIdx()) + " term=" + S(log2.getLastLogTerm()));
+    check(log2.getPersistIndex() == 5, "E3. 恢复后 persistIdx == last（磁盘上的都算已落盘）");
+    check(log2.getCommitIndex() == 0, "E4. commitIndex 易失：重启归 0");
+    {
+        auto es = log2.getEntriesFrom(1, 5);
+        check(es.size() == 5 && es[0].command() == "cmd1" && es[4].term() == 5,
+              "E5. 恢复后内容 / term 一致");
+    }
+
+    // ============================== F. 冲突截断 ==============================
+    std::printf("F. 冲突截断（未提交部分）\n");
+    check(log2.truncateFrom(3) == m_sylar::IOState::SUCCESS, "F1. truncateFrom(3) 成功");
+    check(log2.getLastLogIdx() == 2 && log2.getLastLogTerm() == 2, "F2. 截断后 last=2, last_term=2",
+          "last=" + S(log2.getLastLogIdx()) + " term=" + S(log2.getLastLogTerm()));
+    check(log2.getPersistIndex() <= log2.getLastLogIdx(), "F3. persistIdx 不会超过 last");
+    {
+        NodeLog again;
+        co_await again.init(7);
+        check(again.getLastLogIdx() == 2, "F4. 截断已落盘：重启后 last 仍为 2",
+              "last=" + S(again.getLastLogIdx()));
+    }
+    check(log2.truncateFrom(99) == m_sylar::IOState::SUCCESS, "F5. truncateFrom 超过 last -> 幂等 SUCCESS");
+
+    // 已提交的不能截断
+    {
+        NodeLog c;
+        co_await c.init(7);
+        c.commitLog(2);
+        check(c.truncateFrom(2) == m_sylar::IOState::FAILED, "F6. 截断已提交位置 -> FAILED");
+        check(c.truncateFrom(1) == m_sylar::IOState::FAILED, "F7. 截断点 <= commitIdx -> FAILED");
+        check(c.getLastLogIdx() == 2, "F8. 失败的截断没有副作用");
+    }
+
+    // ============================== G. 切段 + 内存窗口 ==============================
+    std::printf("G. 按字节切段 + 内存窗口（只有最后一段常驻，旧段走磁盘）\n");
+    ::unlink((g_dir + "/7_1.seg").c_str());     // 清掉前面用例留下的段，从空日志开始
+    NodeLog big;
+    co_await big.init(7);
+    const std::string payload(1024 * 1024, 'x');        // 1MB/条：10 条必然超过 8MB 阈值
+    for (int i = 1; i <= 10; ++i) {
+        big.appendLog(mkEntry(9, payload));
+    }
+    check(big.persistLog(10) == m_sylar::IOState::SUCCESS, "G1. 10 x 1MB 落盘成功（触发切段）");
+    {
+        NodeLog r;
+        co_await r.init(7);
+        check(r.getLastLogIdx() == 10, "G2. 重开 last=10", "last=" + S(r.getLastLogIdx()));
+        check(r.getFirstIdx() > 1, "G3. 内存窗口只含最后一段（first > 1）",
+              "first=" + S(r.getFirstIdx()));
+        auto old = r.getEntriesFrom(1, 2);
+        check(old.size() == 2 && old.front().command().size() == payload.size(),
+              "G4. 旧段数据从磁盘读回", "n=" + S(old.size()));
+        check(r.matchLog(1, 9), "G5. matchLog(1,9) 走磁盘也命中");
+        check(co_await r.coLoadLogSeg(1) == m_sylar::IOState::SUCCESS, "G6. coLoadLogSeg(1) 前扩成功");
+        check(r.getFirstIdx() == 1, "G7. 前扩后 first == 1", "first=" + S(r.getFirstIdx()));
+        check(r.getEntriesFrom(1, 2).size() == 2, "G8. 前扩后再取就走内存");
+        check(co_await r.coFreeLogSeg(8) == true, "G9. coFreeLogSeg(8) 释放前缀");
+        check(r.getFirstIdx() == 9, "G10. 释放后 first == 9", "first=" + S(r.getFirstIdx()));
+        check(co_await r.coFreeLogSeg(10) == false, "G11. 不允许把最后一条也释放掉");
+    }
+
+    // ============================== H. 崩溃尾部修复 ==============================
+    std::printf("H. 崩溃尾部修复（半截记录）\n");
+    const std::string seg = g_dir + "/11_1.seg";
+    ::unlink(seg.c_str());
+    {
+        NodeLog w;
+        co_await w.init(11);
+        for (int i = 1; i <= 3; ++i) {
+            w.appendLog(mkEntry(static_cast<uint64_t>(i), std::string(40, static_cast<char>('a' + i))));
         }
-
-        const bool ok = co_await LogEntryWrapper::create(fd, /*base_idx=*/100);
-        check(ok, "A1. create(fd, base_idx=100) 返回 true");
-        check(sizeOf(fd) == kLogHeaderSize, "A2. 文件大小 == 32（只有头，没有记录）",
-              "size=" + u64s(sizeOf(fd)));
-
-        char magic[4] = {};
-        const ssize_t got = ::pread(fd, magic, sizeof(magic), 0);
-        check(got == 4 && magic[0] == 'K' && magic[1] == 'V' && magic[2] == 'L' && magic[3] == 'G',
-              "A3. 磁盘上偏移 0 就是 magic 'KVLG'");
-
-        check(readU64At(fd, 8) == 100, "A4. 磁盘上偏移 8 就是 base_idx（大端）",
-              "base_idx=" + u64s(readU64At(fd, 8)));
-        check(readU64At(fd, 16) == 0, "A5. 磁盘上偏移 16 的 entry_count 从 0 开始",
-              "count=" + u64s(readU64At(fd, 16)));
-
-        LogFileMeta meta{};
-        const bool hok = co_await LogEntryWrapper::readHeader(fd, meta);
-        check(hok && meta.base_idx == 100 && meta.entry_count == 0 &&
-                  meta.header_size == kLogHeaderSize && meta.empty() && meta.lastIdx() == 99,
-              "A6. readHeader 读回 base_idx=100 / entry_count=0 / lastIdx=99",
-              "ok=" + u64s(hok) + " base=" + u64s(meta.base_idx) +
-                  " count=" + u64s(meta.entry_count) + " last=" + u64s(meta.lastIdx()));
-
-        ::close(fd);
+        check(w.persistLog(3) == m_sylar::IOState::SUCCESS, "H1. 写 3 条");
+    }
+    const uint64_t full = fileSize(seg);
+    check(full > kLogHeaderSize, "H2. 段文件有内容", "size=" + S(full));
+    check(::truncate(seg.c_str(), static_cast<off_t>(full - 3)) == 0, "H3. 人为把最后一条砍掉 3 字节");
+    {
+        NodeLog r;
+        check(co_await r.init(11) == m_sylar::IOState::SUCCESS, "H4. 半截记录不会导致启动失败（自动修复）");
+        check(r.getLastLogIdx() == 2 && r.getLastLogTerm() == 2, "H5. 修复后 last=2, last_term=2",
+              "last=" + S(r.getLastLogIdx()));
+        check(r.getEntriesFrom(1, 5).size() == 2, "H6. 前两条仍可读");
+        r.appendLog(mkEntry(4, "after-repair"));
+        check(r.persistLog(3) == m_sylar::IOState::SUCCESS, "H7. 修复后能继续追加");
+    }
+    {
+        NodeLog r;
+        co_await r.init(11);
+        check(r.getLastLogIdx() == 3 && r.getLastLogTerm() == 4, "H8. 再重启 last=3, last_term=4",
+              "last=" + S(r.getLastLogIdx()) + " term=" + S(r.getLastLogTerm()));
     }
 
-    // ============================== B. persist 自动维护 entry_count ==============================
-    std::printf("B. persist：追加日志并自动把 entry_count +1\n");
+    // ============================== I. 状态元信息 ==============================
+    std::printf("I. StateMeta（term/voted_for 单独存、原子写、损坏拒绝）\n");
+    StateMeta sm;
+    check(co_await sm.load(7) == StateMeta::State::Create, "I1. 无状态文件 -> Create");
+    check(sm.getCurrentTerm() == 0 && sm.getVotedFor() == -1,
+          "I2. 全新节点默认 term=0, voted_for=-1（-1 表示未投票）",
+          "term=" + S(sm.getCurrentTerm()) + " voted=" + std::to_string(sm.getVotedFor()));
+    sm.setCurrentTerm(42);
+    sm.setVotedFor(3);
+    check(co_await sm.save() == m_sylar::IOState::SUCCESS, "I3. save 成功");
     {
-        const int fd = openExist();
-        check(fd >= 0, "B0. 重新 open 成功");
-        if (fd < 0) {
-            co_return;
+        StateMeta r;
+        check(co_await r.load(7) == StateMeta::State::Success, "I4. 重新 load -> Success");
+        check(r.getCurrentTerm() == 42 && r.getVotedFor() == 3, "I5. term/voted_for 正确恢复",
+              "term=" + S(r.getCurrentTerm()) + " voted=" + std::to_string(r.getVotedFor()));
+    }
+    {   // 破坏文件 -> Failed（调用方必须拒绝启动，不能当作全新节点）
+        const std::string p = g_dir + "/7_state_meta.ras";
+        const int fd = ::open(p.c_str(), O_RDWR);
+        if (fd >= 0) {
+            const char c = 'Z';
+            ::pwrite(fd, &c, 1, 0);
+            ::close(fd);
         }
-
-        const std::string cmds[3] = {"put a=1", "put b=2", "put c=3"};
-        bool all_ok = true;
-        uint64_t expect_size = kLogHeaderSize;
-        for (int i = 0; i < 3; ++i) {
-            LogEntryWrapper w(static_cast<uint64_t>(i + 1), cmds[i], fd);
-            if (!co_await w.persist()) {
-                all_ok = false;
-            }
-            expect_size += recordBytes(cmds[i], static_cast<uint64_t>(i + 1));
-        }
-        check(all_ok, "B1. persist 3 条都返回 true");
-        check(sizeOf(fd) == expect_size, "B2. 文件大小 = 32 + 3 条记录",
-              "size=" + u64s(sizeOf(fd)) + " expect=" + u64s(expect_size));
-
-        LogFileMeta meta{};
-        const bool hok = co_await LogEntryWrapper::readHeader(fd, meta);
-        check(hok && meta.base_idx == 100 && meta.entry_count == 3,
-              "B3. ★ readHeader: base_idx 不变(100)、entry_count 自动变成 3",
-              "base=" + u64s(meta.base_idx) + " count=" + u64s(meta.entry_count));
-        check(readU64At(fd, 16) == 3, "B4. ★ 磁盘上偏移 16 的 entry_count 也真的是 3（就地更新生效）",
-              "count=" + u64s(readU64At(fd, 16)));
-        check(meta.lastIdx() == 102, "B5. 本片覆盖索引 [100, 102]",
-              "lastIdx=" + u64s(meta.lastIdx()));
-
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        bool same = entries.size() == 3;
-        if (same) {
-            for (int i = 0; i < 3; ++i) {
-                if (entries[i].term() != static_cast<uint64_t>(i + 1) || entries[i].command() != cmds[i]) {
-                    same = false;
-                }
-            }
-        }
-        check(same, "B6. ★ readLogFile 跳过文件头，按序读出 3 条（term/command 对得上）",
-              "n=" + u64s(entries.size()));
-
-        // 索引换算：LogEntry 里没有 index 字段，索引 = base_idx + 位置
-        check(entries.size() == meta.entry_count &&
-                  meta.base_idx + entries.size() - 1 == meta.lastIdx(),
-              "B7. 索引换算自洽：base_idx + 位置 = [100,102]");
-
-        ::close(fd);
-    }
-
-    // ============================== C. 重开文件（持久化后元信息仍在） ==============================
-    std::printf("C. 重开：元信息与内容都还在\n");
-    {
-        const int fd = openExist();
-        LogFileMeta meta{};
-        const bool hok = co_await LogEntryWrapper::readHeader(fd, meta);
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        check(hok && meta.base_idx == 100 && meta.entry_count == 3,
-              "C1. 新 fd 上 readHeader 仍是 base_idx=100 / count=3",
-              "base=" + u64s(meta.base_idx) + " count=" + u64s(meta.entry_count));
-        check(entries.size() == 3 && entries[2].command() == "put c=3",
-              "C2. 新 fd 上 readLogFile 仍是 3 条、顺序不变",
-              "n=" + u64s(entries.size()));
-        ::close(fd);
-    }
-
-    // ============================== D. updateEntryCount 单独用 ==============================
-    std::printf("D. updateEntryCount：单独就地改计数\n");
-    {
-        const int fd = openExist();
-        check(co_await LogEntryWrapper::updateEntryCount(fd, 7), "D1. updateEntryCount(fd,7) 返回 true");
-        LogFileMeta meta{};
-        const bool hok = co_await LogEntryWrapper::readHeader(fd, meta);
-        check(hok && meta.entry_count == 7 && meta.base_idx == 100,
-              "D2. 只改了 entry_count，base_idx 不动",
-              "base=" + u64s(meta.base_idx) + " count=" + u64s(meta.entry_count));
-        check(sizeOf(fd) == sizeOf(fd), "D3. 就地改写：文件大小不变（没有追加/截断）");
-        check(co_await LogEntryWrapper::updateEntryCount(fd, 3), "D4. 改回 3");
-        ::close(fd);
-    }
-
-    // ============================== E. 坏 fd / 空文件 / 截断 / 版本 / 老格式 ==============================
-    std::printf("E. 异常输入：都要安全返回 false，不能崩\n");
-    {
-        LogFileMeta meta{};
-        check(!co_await LogEntryWrapper::create(-1, 1), "E1. create(-1) == false");
-        check(!co_await LogEntryWrapper::readHeader(-1, meta), "E2. readHeader(-1) == false");
-        check(!co_await LogEntryWrapper::updateEntryCount(-1, 1), "E3. updateEntryCount(-1) == false");
-    }
-
-    // 空文件（0 字节）
-    const std::string empty_path = g_path + ".empty";
-    {
-        ::unlink(empty_path.c_str());
-        const int fd = ::open(empty_path.c_str(), O_CREAT | O_RDWR, 0644);
-        LogFileMeta meta{};
-        check(!co_await LogEntryWrapper::readHeader(fd, meta),
-              "E4. 空文件 readHeader == false（当作不是分片文件）");
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        check(entries.empty(), "E5. 空文件 readLogFile 返回 0 条（不抛）",
-              "n=" + u64s(entries.size()));
-        ::close(fd);
-        ::unlink(empty_path.c_str());
-    }
-
-    // 截断的文件头（10 字节）
-    const std::string trunc_path = g_path + ".trunc";
-    {
-        ::unlink(trunc_path.c_str());
-        const int fd = ::open(trunc_path.c_str(), O_CREAT | O_RDWR, 0644);
-        const ssize_t w = ::write(fd, "KVLG12345", 10);
-        (void)w;
-        LogFileMeta meta{};
-        check(!co_await LogEntryWrapper::readHeader(fd, meta), "E6. 只有 10 字节的残头 == false");
-        ::close(fd);
-        ::unlink(trunc_path.c_str());
-    }
-
-    // 版本不认识
-    const std::string ver_path = g_path + ".ver";
-    {
-        ::unlink(ver_path.c_str());
-        const int fd = ::open(ver_path.c_str(), O_CREAT | O_RDWR, 0644);
-        char hdr[kLogHeaderSize] = {};
-        hdr[0] = 'K'; hdr[1] = 'V'; hdr[2] = 'L'; hdr[3] = 'G';
-        hdr[5] = 99;                            // version = 99（大端，高字节 0）
-        hdr[7] = static_cast<char>(kLogHeaderSize);
-        const ssize_t w = ::write(fd, hdr, sizeof(hdr));
-        (void)w;
-        LogFileMeta meta{};
-        check(!co_await LogEntryWrapper::readHeader(fd, meta),
-              "E7. 未来版本的 version=99 == false（不敢按当前布局解）");
-        ::close(fd);
-        ::unlink(ver_path.c_str());
-    }
-
-    // 老格式：裸记录，没有文件头 —— 必须还能读
-    const std::string legacy_path = g_path + ".legacy";
-    {
-        ::unlink(legacy_path.c_str());
-        const int fd = ::open(legacy_path.c_str(), O_CREAT | O_RDWR, 0644);
-        appendRawRecord(fd, 7, "legacy-1");
-        appendRawRecord(fd, 8, "legacy-2");
-
-        LogFileMeta meta{};
-        check(!co_await LogEntryWrapper::readHeader(fd, meta),
-              "E8. 无头的老文件 readHeader == false（调用方应退回偏移 0）");
-
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        check(entries.size() == 2 && entries[0].command() == "legacy-1" &&
-                  entries[1].term() == 8,
-              "E9. ★ 老格式仍能读：readLogFile 从偏移 0 解析出 2 条",
-              "n=" + u64s(entries.size()));
-        ::close(fd);
-        ::unlink(legacy_path.c_str());
-    }
-
-    // ============================== F. create 的"重建"语义 ==============================
-    std::printf("F. create 重建：老内容（含旧头）全部丢掉\n");
-    {
-        const int fd = openExist();
-        check(co_await LogEntryWrapper::create(fd, /*base_idx=*/500), "F1. 对已有文件再 create 成功");
-        LogFileMeta meta{};
-        const bool hok = co_await LogEntryWrapper::readHeader(fd, meta);
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        check(sizeOf(fd) == kLogHeaderSize && hok && meta.base_idx == 500 &&
-                  meta.entry_count == 0 && entries.empty(),
-              "F2. ★ 重建后：size=32、base_idx=500、entry_count=0、读不到旧记录",
-              "size=" + u64s(sizeOf(fd)) + " base=" + u64s(meta.base_idx) +
-                  " count=" + u64s(meta.entry_count) + " n=" + u64s(entries.size()));
-        ::close(fd);
-    }
-
-    // ============================== G. NodeLog::persistLog / commitLog ==============================
-    std::printf("G. NodeLog：persistLog（同步落盘、不跳号）/ commitLog（不许提交未落盘的）\n");
-    {
-        // G1. 没 attach 分片文件时不能落盘
-        {
-            NodeLog bad;
-            const int tfd = openNew();
-            (void)co_await LogEntryWrapper::create(tfd, 1);
-            bad.appendLog(LogEntryWrapper(1, "orphan", tfd));
-            check(bad.persistLog(1) == m_sylar::IOState::FAILED,
-                  "G1. 没 attach 分片 fd：persistLog(1) == FAILED（不是崩溃也不是假装成功）");
-            ::close(tfd);
-        }
-
-        const std::string shard = g_path + ".shard";
-        ::unlink(shard.c_str());
-        const int fd = ::open(shard.c_str(), O_CREAT | O_RDWR, 0644);
-        check(fd >= 0 && co_await LogEntryWrapper::create(fd, /*base_idx=*/1),
-              "G2. 建一个 base_idx=1 的空分片");
-
-        NodeLog log;
-        log.attach(fd, /*base_idx=*/1);
-        check(log.persistLog(0) == m_sylar::IOState::SUCCESS,
-              "G3. persistLog(0) == SUCCESS（没有日志要写，幂等）");
-
-        const std::string cmds[5] = {"e1", "e2", "e3", "e4", "e5"};
-        for (int i = 0; i < 3; ++i) {
-            log.appendLog(LogEntryWrapper(static_cast<uint64_t>(i + 1), cmds[i], fd));
-        }
-        check(log.getLastLogIdx() == 3, "G4. appendLog 3 条后 getLastLogIdx() == 3",
-              "last=" + u64s(log.getLastLogIdx()));
-
-        // G5. 只落盘到 2：不允许跳号，也不许越过
-        check(log.persistLog(2) == m_sylar::IOState::SUCCESS, "G5. persistLog(2) == SUCCESS");
-        LogFileMeta meta{};
-        co_await LogEntryWrapper::readHeader(fd, meta);
-        check(meta.entry_count == 2 && log.getPersistIndex() == 2,
-              "G6. ★ 文件头 entry_count == 2（真的只写了前 2 条）",
-              "count=" + u64s(meta.entry_count) + " persist_idx=" + u64s(log.getPersistIndex()));
-
-        // G7. 还没 append 的索引落不了盘
-        check(log.persistLog(4) == m_sylar::IOState::FAILED,
-              "G7. persistLog(4)（只 append 了 3 条）== FAILED");
-        co_await LogEntryWrapper::readHeader(fd, meta);
-        check(meta.entry_count == 2, "G8. 失败后文件没有被写脏，entry_count 仍是 2",
-              "count=" + u64s(meta.entry_count));
-
-        // G9. 补到 3
-        check(log.persistLog(3) == m_sylar::IOState::SUCCESS && log.getPersistIndex() == 3,
-              "G9. persistLog(3) 补齐第 3 条");
-
-        // G10. 幂等
-        check(log.persistLog(3) == m_sylar::IOState::SUCCESS, "G10. persistLog(3) 重复调用仍 SUCCESS（幂等）");
-        co_await LogEntryWrapper::readHeader(fd, meta);
-        check(meta.entry_count == 3, "G11. 重复落盘不会把条目重复写进去（entry_count 仍是 3）",
-              "count=" + u64s(meta.entry_count));
-
-        // G12. commitLog：越过已落盘位点的提交必须被拒
-        check(log.commitLog(2) && log.getCommitIndex() == 2, "G12. commitLog(2) == true，commitIndex=2");
-        check(!log.commitLog(4), "G13. ★ commitLog(4)：没有这条日志 == false");
-        check(!log.commitLog(4), "G14. 再调一次 false（因为没有这条日志，而不是因为已提交）");
-        check(log.commitLog(3) && log.getCommitIndex() == 3, "G15. commitLog(3)（已落盘）== true");
-        check(log.commitLog(3), "G16. commitLog(3) 重复调用 == true（已经提交）");
-        check(log.commitLog(1), "G17. commitLog(1)（比当前提交位点小）== true（已经提交）");
-        check(log.getCommitIndex() == 3, "G18. ★ 提交位点不会被小的 idx 回退",
-              "commit=" + u64s(log.getCommitIndex()));
-
-        // G19. 未落盘的日志不许提交
-        log.appendLog(LogEntryWrapper(4, cmds[3], fd));
-        check(!log.commitLog(4), "G19. ★ 第 4 条还没落盘：commitLog(4) == false");
-        check(log.persistLog(4) == m_sylar::IOState::SUCCESS && log.commitLog(4) &&
-                  log.getCommitIndex() == 4,
-              "G20. 落盘之后 commitLog(4) == true");
-
-        // G21. 从 RPC 收到的 entry：用 LogEntryWrapper(const LogEntry&) 构造，它内部的 fd 是 -1，
-        //      但 NodeLog 用的是自己的 m_fd，所以照样能落盘
-        LogEntry raw;
-        raw.set_term(9);
-        raw.set_command(cmds[4]);
-        log.appendLog(LogEntryWrapper(raw));
-        check(log.persistLog(5) == m_sylar::IOState::SUCCESS,
-              "G21. ★ entry 自带的 fd=-1 也能落盘（persistLog 用的是 NodeLog 自己的分片 fd）");
-        co_await LogEntryWrapper::readHeader(fd, meta);
-        check(meta.entry_count == 5, "G22. 文件头 entry_count == 5",
-              "count=" + u64s(meta.entry_count));
-        check(meta.base_idx == 1 && log.getBase() == 1, "G23. base_idx 全程没被改（仍是 1）");
-
-        // G24. 落盘内容要和内存里的顺序完全一致
-        std::vector<LogEntry> entries = co_await LogEntryWrapper::readLogFile(fd);
-        bool same = entries.size() == 5;
-        if (same) {
-            for (int i = 0; i < 5; ++i) {
-                if (entries[i].command() != cmds[i]) {
-                    same = false;
-                }
-            }
-        }
-        check(same, "G24. ★ readLogFile 读回 5 条，顺序/内容与 append 顺序一致",
-              "n=" + u64s(entries.size()));
-
-        ::close(fd);
-        ::unlink(shard.c_str());
+        StateMeta bad;
+        check(co_await bad.load(7) == StateMeta::State::Failed, "I6. 文件损坏 -> Failed");
     }
 
     co_return;
@@ -413,14 +236,19 @@ static m_sylar::Task<void> runAll() {
 int main() {
     setvbuf(stdout, nullptr, _IONBF, 0);
 
-    g_path = "/tmp/kvraft_log_test_" + std::to_string(::getpid()) + ".log";
-    std::printf("临时文件: %s\n", g_path.c_str());
+    g_dir = "/tmp/kvraft_log_test_" + std::to_string(::getpid());
+    const std::string prep = "rm -rf " + g_dir + " && mkdir -p " + g_dir;
+    if (::system(prep.c_str()) != 0 || ::chdir(g_dir.c_str()) != 0) {
+        std::printf("准备临时目录失败: %s\n", g_dir.c_str());
+        return 1;
+    }
+    std::printf("临时目录: %s\n", g_dir.c_str());
 
-    runAll();       // eager Task：体里全是同步完成的 co_await，会一路跑到 co_return
+    runAll();       // eager Task：体里全是同步完成的 co_await
 
-    ::unlink(g_path.c_str());
+    const std::string clean = "rm -rf " + g_dir;
+    if (::system(clean.c_str()) != 0) { /* 清理失败无关紧要 */ }
+
     std::printf("\n结果: pass=%d fail=%d\n", g_pass, g_fail);
-
-    // 和别的测试一样用 _Exit：m_sylar 的静态对象析构在非 IOManager 线程上不安全
-    std::_Exit(g_fail == 0 ? 0 : 1);
+    std::_Exit(g_fail == 0 ? 0 : 1);     // 和别的测试一致：避开 m_sylar 静态对象析构
 }
