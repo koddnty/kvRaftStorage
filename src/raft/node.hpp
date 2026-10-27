@@ -82,6 +82,7 @@ public:
     m_sylar::Task<void> handleRequestVote(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
     // log处理
+    // leader节点向其他节点发送日志复制请求，如果其他节点存在term更大情况，leader回退至follower
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(std::shared_ptr<AppendEntriesArgs> entry);        // leadre心跳发送
     m_sylar::Task<void> handleAppendEntries(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 

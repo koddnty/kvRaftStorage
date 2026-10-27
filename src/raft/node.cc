@@ -198,7 +198,7 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
             // 检查leader心跳
             uint64_t curr_time = m_sylar::GetCurrentTime_ms();
             if (node->getState() == NodeState::State::Leader) {
-                M_SYLAR_LOG_WARN(g_logger) << "当前节点是leader却在尝试发送选举请求";
+                M_SYLAR_LOG_DEBUG(g_logger) << "当前节点是leader却在尝试发送选举请求";
                 co_return;
             }
             if (curr_time - node->m_recent_leader_heart > node->m_election_interval_time) {
@@ -262,6 +262,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
     req_vote.set_term(m_state.getTerm());                      // 任期
     req_vote.set_candidate_id(m_state.getId());                 // 节点id
     req_vote.set_last_log_index(m_log.getLastLogIdx());
+    req_vote.set_last_log_term(m_log.getLastLogTerm());
     *req_bytes = req_vote.SerializeAsString();
 
     auto resp_bytes = std::make_shared<std::string>();
@@ -286,6 +287,11 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
             }
             else {
                 M_SYLAR_LOG_INFO(g_logger) << "未能从节点 " << i << " 中获得投票";
+                if (m_state.getTerm() < reply.term()) {
+                    M_SYLAR_LOG_DEBUG(g_logger) << "对方此时term较大，终止选举，回退为follower";
+                    co_await becomeFollower(reply.term());
+                    co_return;
+                }
             }
 
         }
@@ -351,7 +357,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(std::sha
 
         RPC::CallState st = co_await m_mgr->getClient()->call(i, "craft", "appendEntries", req_bytes, resp_bytes);
         if (st != RPC::CallState::SUCCESS) {
-            M_SYLAR_LOG_DEBUG(g_logger) << "failed to request vote to node {" << i << "}";
+            M_SYLAR_LOG_DEBUG(g_logger) << "未能和节点 {" << i << "} 同步日志";
             continue;
         }
 
@@ -360,6 +366,17 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(std::sha
         reply.ParseFromString(*resp_bytes);     // 响应
 
         // TODO 对响应处理, 如对方term大...
+        if (reply.term() > m_state.getTerm()) {     // 对方term更大
+            // TODO 回退至follower
+            co_await becomeFollower(reply.term());
+            co_return;
+        }
+        else if (!reply.success()) {        // 对方term和自己一样但拒绝了，需回退日志
+            // TODO 逐次回退到最近未同步
+        }
+        else {      // 同步成功，等待下次同步
+            // TODO 继续同步逻辑
+        }
     }
     co_return;
 }
@@ -396,7 +413,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
     entries->set_term(m_state.getTerm());
     entries->set_leader_commit(m_log.getCommitIndex());
     entries->set_leader_id(m_id);
-    entries->set_prev_log_index(m_log.getLastLogTerm());
+    entries->set_prev_log_index(m_log.getLastLogIdx());
     entries->set_prev_log_term(m_log.getLastLogTerm());
     m_sylar::IOManager::getInstance()->schedule(
             m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendEntries, this, entries)));
@@ -404,7 +421,6 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
 
 
 m_sylar::Task<AppendEntriesReply> RaftNode::handleHeartBeat(const AppendEntriesArgs& entries) {
-    // TODO 实现信息返回
     M_SYLAR_LOG_INFO(g_logger) << "节点 " << m_id << " 收到主节点 " << entries.leader_id() << " 的心跳";
     AppendEntriesReply reply;
     reply.set_term(m_state.getTerm());
@@ -459,9 +475,9 @@ m_sylar::Task<bool> RaftNode::becomeFollower(uint64_t term) {
 }
 
 m_sylar::Task<bool>  RaftNode::becomeCandidate() {
-    if (m_state.getState() == NodeState::State::Candidate) {
-        co_return true;
-    }
+    // if (m_state.getState() == NodeState::State::Candidate) {
+    //     co_return true;
+    // }
     if (!m_leader_timer->getIsCanceled()) {
         m_leader_timer->cancel();
     }

@@ -7,6 +7,24 @@ message LogEntry {
     bytes command = 2;
 }
 
+message LogSegmentMeta {
+    uint64 start_index = 1;
+    uint64 end_index = 2;
+    uint64 file_size = 3;
+}
+
+message LogSegment {
+    LogSegmentMeta = 1;
+    repeated LogEntry = 2;
+}
+
+message PersistentState {
+    uint64 current_term = 1;    // 当前任期
+    int64 voted_for = 2;      // 投票对象
+    uint64 commitIdx = 3;     // 提交idx
+    uint64 appliedIdx = 4;    // 应用idx
+}
+
 // 选举投票
 message RequestVoteArgs {
     uint64 term = 1;
