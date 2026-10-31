@@ -48,3 +48,10 @@ message AppendEntriesReply {
     uint64 term = 1;
     bool success = 2;
 }
+
+// 同步消息
+message SyncMessageReply {
+    uint64 term = 1;
+    uint64 last_log_index = 2;
+    uint64 commit_log_index = 3;
+}

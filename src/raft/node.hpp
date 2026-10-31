@@ -61,6 +61,17 @@ private:
 };
 
 
+struct PeerState {
+public:
+    enum class State {
+        Ready,      // 就绪
+        Init        // 初始化中
+    };
+    uint64_t last_log_index = 0;
+    uint64_t commit_log_index = 0;
+    State state {State::Init};
+};
+
 
 
 // 节点总控 ----------------------------------------
@@ -86,6 +97,9 @@ public:
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(std::shared_ptr<AppendEntriesArgs> entry);        // leadre心跳发送
     m_sylar::Task<void> handleAppendEntries(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
+    // leader启动时同步follower信息
+    m_sylar::Task<void> SyncNodeMessage();
+    m_sylar::Task<void> handleSyncNodeMessage(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);
 
     // 状态函数
     [[nodiscard]] NodeState::State getState() const {return m_state.getState();}
@@ -107,13 +121,14 @@ protected:
 private:
     m_sylar::CoMutex m_mutex;       // 资源锁
 
+
     int m_id {-1};                                                              // 节点id
     NodeState m_state;
     NodeLog m_log;      // 日志记录
     size_t m_node_count {0};                                                    // 总节点数目
     std::atomic<int> m_rpc_state {0};           // -1 错误, 0 未初始化， 1 未开始， 2 已启动， 3 stop
     craft::RPCManager* m_mgr {nullptr};
-    std::vector<NodeState> m_peers_state;      // 对端节点状态
+    std::vector<PeerState> m_peers_state;      // 对端节点状态
 
     // 定时器设置
     uint64_t m_election_interval_time {0};

@@ -63,6 +63,9 @@ extern RequestVoteArgsDefaultTypeInternal _RequestVoteArgs_default_instance_;
 class RequestVoteReply;
 struct RequestVoteReplyDefaultTypeInternal;
 extern RequestVoteReplyDefaultTypeInternal _RequestVoteReply_default_instance_;
+class SyncMessageReply;
+struct SyncMessageReplyDefaultTypeInternal;
+extern SyncMessageReplyDefaultTypeInternal _SyncMessageReply_default_instance_;
 }  // namespace craft
 PROTOBUF_NAMESPACE_OPEN
 template<> ::craft::AppendEntriesArgs* Arena::CreateMaybeMessage<::craft::AppendEntriesArgs>(Arena*);
@@ -71,6 +74,7 @@ template<> ::craft::LogEntry* Arena::CreateMaybeMessage<::craft::LogEntry>(Arena
 template<> ::craft::PersistentState* Arena::CreateMaybeMessage<::craft::PersistentState>(Arena*);
 template<> ::craft::RequestVoteArgs* Arena::CreateMaybeMessage<::craft::RequestVoteArgs>(Arena*);
 template<> ::craft::RequestVoteReply* Arena::CreateMaybeMessage<::craft::RequestVoteReply>(Arena*);
+template<> ::craft::SyncMessageReply* Arena::CreateMaybeMessage<::craft::SyncMessageReply>(Arena*);
 PROTOBUF_NAMESPACE_CLOSE
 namespace craft {
 
@@ -1162,6 +1166,176 @@ class AppendEntriesReply final :
   union { Impl_ _impl_; };
   friend struct ::TableStruct_types_2eproto;
 };
+// -------------------------------------------------------------------
+
+class SyncMessageReply final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:craft.SyncMessageReply) */ {
+ public:
+  inline SyncMessageReply() : SyncMessageReply(nullptr) {}
+  ~SyncMessageReply() override;
+  explicit PROTOBUF_CONSTEXPR SyncMessageReply(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  SyncMessageReply(const SyncMessageReply& from);
+  SyncMessageReply(SyncMessageReply&& from) noexcept
+    : SyncMessageReply() {
+    *this = ::std::move(from);
+  }
+
+  inline SyncMessageReply& operator=(const SyncMessageReply& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline SyncMessageReply& operator=(SyncMessageReply&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const SyncMessageReply& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const SyncMessageReply* internal_default_instance() {
+    return reinterpret_cast<const SyncMessageReply*>(
+               &_SyncMessageReply_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    6;
+
+  friend void swap(SyncMessageReply& a, SyncMessageReply& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(SyncMessageReply* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(SyncMessageReply* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  SyncMessageReply* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<SyncMessageReply>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const SyncMessageReply& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const SyncMessageReply& from) {
+    SyncMessageReply::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(SyncMessageReply* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "craft.SyncMessageReply";
+  }
+  protected:
+  explicit SyncMessageReply(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kTermFieldNumber = 1,
+    kLastLogIndexFieldNumber = 2,
+    kCommitLogIndexFieldNumber = 3,
+  };
+  // uint64 term = 1;
+  void clear_term();
+  uint64_t term() const;
+  void set_term(uint64_t value);
+  private:
+  uint64_t _internal_term() const;
+  void _internal_set_term(uint64_t value);
+  public:
+
+  // uint64 last_log_index = 2;
+  void clear_last_log_index();
+  uint64_t last_log_index() const;
+  void set_last_log_index(uint64_t value);
+  private:
+  uint64_t _internal_last_log_index() const;
+  void _internal_set_last_log_index(uint64_t value);
+  public:
+
+  // uint64 commit_log_index = 3;
+  void clear_commit_log_index();
+  uint64_t commit_log_index() const;
+  void set_commit_log_index(uint64_t value);
+  private:
+  uint64_t _internal_commit_log_index() const;
+  void _internal_set_commit_log_index(uint64_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:craft.SyncMessageReply)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    uint64_t term_;
+    uint64_t last_log_index_;
+    uint64_t commit_log_index_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_types_2eproto;
+};
 // ===================================================================
 
 
@@ -1743,9 +1917,75 @@ inline void AppendEntriesReply::set_success(bool value) {
   // @@protoc_insertion_point(field_set:craft.AppendEntriesReply.success)
 }
 
+// -------------------------------------------------------------------
+
+// SyncMessageReply
+
+// uint64 term = 1;
+inline void SyncMessageReply::clear_term() {
+  _impl_.term_ = uint64_t{0u};
+}
+inline uint64_t SyncMessageReply::_internal_term() const {
+  return _impl_.term_;
+}
+inline uint64_t SyncMessageReply::term() const {
+  // @@protoc_insertion_point(field_get:craft.SyncMessageReply.term)
+  return _internal_term();
+}
+inline void SyncMessageReply::_internal_set_term(uint64_t value) {
+  
+  _impl_.term_ = value;
+}
+inline void SyncMessageReply::set_term(uint64_t value) {
+  _internal_set_term(value);
+  // @@protoc_insertion_point(field_set:craft.SyncMessageReply.term)
+}
+
+// uint64 last_log_index = 2;
+inline void SyncMessageReply::clear_last_log_index() {
+  _impl_.last_log_index_ = uint64_t{0u};
+}
+inline uint64_t SyncMessageReply::_internal_last_log_index() const {
+  return _impl_.last_log_index_;
+}
+inline uint64_t SyncMessageReply::last_log_index() const {
+  // @@protoc_insertion_point(field_get:craft.SyncMessageReply.last_log_index)
+  return _internal_last_log_index();
+}
+inline void SyncMessageReply::_internal_set_last_log_index(uint64_t value) {
+  
+  _impl_.last_log_index_ = value;
+}
+inline void SyncMessageReply::set_last_log_index(uint64_t value) {
+  _internal_set_last_log_index(value);
+  // @@protoc_insertion_point(field_set:craft.SyncMessageReply.last_log_index)
+}
+
+// uint64 commit_log_index = 3;
+inline void SyncMessageReply::clear_commit_log_index() {
+  _impl_.commit_log_index_ = uint64_t{0u};
+}
+inline uint64_t SyncMessageReply::_internal_commit_log_index() const {
+  return _impl_.commit_log_index_;
+}
+inline uint64_t SyncMessageReply::commit_log_index() const {
+  // @@protoc_insertion_point(field_get:craft.SyncMessageReply.commit_log_index)
+  return _internal_commit_log_index();
+}
+inline void SyncMessageReply::_internal_set_commit_log_index(uint64_t value) {
+  
+  _impl_.commit_log_index_ = value;
+}
+inline void SyncMessageReply::set_commit_log_index(uint64_t value) {
+  _internal_set_commit_log_index(value);
+  // @@protoc_insertion_point(field_set:craft.SyncMessageReply.commit_log_index)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------
