@@ -77,8 +77,6 @@ public:
 // 节点总控 ----------------------------------------
 class RaftNode : public std::enable_shared_from_this<RaftNode>{
 public:
-
-public:
     RaftNode();
     ~RaftNode();
 

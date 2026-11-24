@@ -487,6 +487,7 @@ m_sylar::Task<void> RaftNode::SyncNodeMessage() {
 static std::ostream& operator<< (std::ostream& os, const SyncMessageReply& message) {
     os  << "\ncommit_log_index: " << message.commit_log_index()
         << "\nlast_log_index:  " << message.last_log_index() << "\n";
+    return  os;
 }
 
 m_sylar::Task<void> RaftNode::handleSyncNodeMessage(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
