@@ -30,6 +30,17 @@ static uint64_t getRandFollowerElectionTimeMs() {
 }
 
 
+static std::ostream& operator<< (std::ostream& os, const AppendEntriesArgs& entries) {
+    os  << "entries info: \n"
+        << "leader_id" << entries.leader_id()
+        << "leader_commit" << entries.leader_commit()
+        << "prev_log_idx" << entries.prev_log_index()
+        << "prev_log_term" << entries.prev_log_term()
+        << "entries number count: " << entries.entries().size() << "\n";
+    return  os;
+}
+
+
 
 // 节点状态 ----------------------------------------
 void NodeState::init(int id, size_t node_count) {
@@ -369,75 +380,171 @@ m_sylar::Task<void> RaftNode::handleRequestVote
 }
 
 
-m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(std::shared_ptr<AppendEntriesArgs> entry) {
-    auto req_bytes = std::make_shared<std::string>();
-    auto resp_bytes = std::make_shared<std::string>();
-    *req_bytes = entry->SerializeAsString();
-
-
+m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t idx, bool detection) {
     // 状态:
-
     // TODO 改为并行发送请求
+    size_t successed_number = 1;
     for (int i = 0; i < m_node_count; i++) {
         if (i == m_id) {continue; }
-
-        RPC::CallState st = co_await m_mgr->getClient()->call(i, "craft", "appendEntries", req_bytes, resp_bytes);
-        if (st != RPC::CallState::SUCCESS) {
-            M_SYLAR_LOG_DEBUG(g_logger) << "和节点 {" << i << "} 复制日志失败";
+        // 日志同步
+        bool rt = co_await appendEntriesTo(idx, i, detection);
+        if (!rt) {
+            M_SYLAR_LOG_INFO(g_logger) << "未能向节点 {" << i << "} 复制日志: ";
             continue;
         }
+        ++successed_number;
+    }
 
-        // resp 解析
-        AppendEntriesReply reply;
-        reply.ParseFromString(*resp_bytes);     // 响应
-
-        // TODO 对响应处理, 如对方term大...
-        {
-            m_sylar::CoUniqueLock w_lock(m_mutex);
-            co_await w_lock.lock();
-            if (reply.term() > m_state.getTerm()) {     // 对方term更大
-                // TODO 回退至follower
-                co_await becomeFollower(reply.term());
-                co_return;
-            }
-            else if (!reply.success()) {        // 对方term和自己一样但拒绝了，需回退日志
-                // TODO 逐次回退到最近未同步
-            }
-            else {      // 同步成功，等待下次同步
-                // TODO 继续同步逻辑
-            }
+    if (successed_number * 2 > m_node_count && m_state.getTerm() == m_log.getTermAt(idx)) {
+        // 日志可提交
+        if (!m_log.commitLog(idx)) {
+            M_SYLAR_LOG_ERROR(g_logger) << "日志提交失败";
+            co_return;
         }
     }
     co_return;
 }
 
 
-m_sylar::Task<void> RaftNode::handleAppendEntries
-            (std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
-    // 日志处理函数
-    AppendEntriesArgs entry;
-    entry.ParseFromString(req->data());
-    // 心跳分支
-    if (entry.entries().size() == 0) {    // 心跳entry
-        RPC::Response resp;
-        {
-            m_sylar::CoUniqueLock w_lock(m_mutex);
-            co_await w_lock.lock();
-            AppendEntriesReply reply = co_await handleHeartBeat(entry);
-            resp.set_id(req->id());
-            resp.set_code(static_cast<int>(RPC::RpcCode::OK));
-            resp.set_data(reply.SerializeAsString());
-        }
-
-        co_await session->co_sendRpcMessage(resp);
-        co_return;
+m_sylar::Task<bool> RaftNode::appendEntriesTo(uint64_t idx, size_t node_id, bool detection) {
+    if (node_id == m_id) {co_return true; }
+    if (idx > m_log.getLastLogIdx()) {
+        M_SYLAR_LOG_ERROR(g_logger) << "尝试复制不存在的日志，索引为: " << idx << "  当前最新索引: " << m_log.getLastLogIdx();
+        co_return false;
     }
 
-    // TODO 日志处理
+    std::shared_ptr<AppendEntriesArgs> entries = std::make_shared<AppendEntriesArgs>();
     {
         m_sylar::CoUniqueLock w_lock(m_mutex);
         co_await w_lock.lock();
-        M_SYLAR_LOG_INFO(g_logger) << "暂无日志处理逻辑";
+        entries->set_leader_id(m_id);
+        entries->set_term(m_state.getTerm());
+        entries->set_leader_commit(m_log.getCommitIndex());
+        entries->set_prev_log_index(idx - 1);
+
+        auto log_term = m_log.getTermAt(idx - 1);
+        if (log_term.has_value()) {
+            entries->set_prev_log_term(m_log.getTermAt(idx - 1).value());       // 暂时用当前term
+        }
+        else {
+            M_SYLAR_LOG_ERROR(g_logger) << "访问不存在的log，索引: " << idx;
+        }
+    }
+
+    if (idx != 0 && !detection) {
+        LogEntry* new_entry = entries->add_entries();
+        try {
+            new_entry->CopyFrom(m_log.getEntriesFrom(idx, 1).back());
+        } catch (const std::exception& e) {
+            M_SYLAR_LOG_ERROR(g_logger) << e.what();
+        }
+    }
+
+    // 组装entries
+    auto req_bytes = std::make_shared<std::string>();
+    auto resp_bytes = std::make_shared<std::string>();
+    *req_bytes = entries->SerializeAsString();
+
+
+    // 发送同步信息
+    RPC::CallState st = co_await m_mgr->getClient()->
+                        call(node_id, "craft", "appendEntries", req_bytes, resp_bytes);
+
+    if (st != RPC::CallState::SUCCESS) {
+        M_SYLAR_LOG_DEBUG(g_logger) << "和节点 {" << node_id << "} 复制日志失败\n" << *entries;
+        co_return false;
+    }
+
+    // resp 解析
+    AppendEntriesReply reply;
+    reply.ParseFromString(*resp_bytes);     // 响应
+    // 响应处理
+    {
+        m_sylar::CoUniqueLock w_lock(m_mutex);
+        co_await w_lock.lock();
+        if (reply.term() > m_state.getTerm()) {     // 对方term更大
+            // 回退至follower
+            co_await becomeFollower(reply.term());
+            co_return false;
+        }
+        else if (!reply.success()) {        // 日志回退
+            // TODO 逐次回退到最近未同步
+            w_lock.unlock();
+            bool rt = co_await appendEntriesTo(idx - 1, node_id);
+            if (rt == true) {
+                co_return co_await appendEntriesTo(idx, node_id);
+            }
+            co_return false;
+        }
+        else {      // 同步成功，等待下次同步
+            // TODO 继续同步逻辑
+            co_return true;
+        }
+    }
+}
+
+
+
+m_sylar::Task<void> RaftNode::handleAppendEntries
+            (std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
+    // 日志处理函数
+    AppendEntriesArgs entries;
+    entries.ParseFromString(req->data());
+
+    // 日志处理
+    {
+        m_sylar::CoUniqueLock w_lock(m_mutex);
+        co_await w_lock.lock();
+        RPC::Response resp;
+        AppendEntriesReply reply = co_await handleHeartBeat(entries);
+        if (!reply.success()) {         // 心跳处理出现不匹配: 日志不匹配/任期不匹配
+            w_lock.unlock();
+            resp.set_data(reply.SerializeAsString());
+            resp.set_id(req->id());
+            co_await session->co_sendRpcMessage(resp);
+            co_return;
+        }
+
+        // 日志和任期匹配,进行日志复制
+        // 日志追加
+        for (uint64_t i = 0; i < entries.entries_size(); i++) {
+            if (m_log.getTermAt(entries.prev_log_index() + i + 1).has_value() &&
+                entries.entries(i).term() == m_log.getTermAt(entries.prev_log_index() + i + 1)) {
+                continue;
+            }
+            if (m_sylar::IOState::SUCCESS !=  m_log.truncateFrom(entries.prev_log_index() + i + 1)) {
+                M_SYLAR_LOG_ERROR(g_logger) << "截断失败，程序停止";
+                assert(false);
+            }
+            m_log.appendLog(entries.entries(i));
+        }
+        // 日志持久化
+        if (m_sylar::IOState::SUCCESS == m_log.persistLog(m_log.getLastLogIdx())) {
+            // 节点信息更新
+            // 日志提交
+            m_log.commitLog(std::min(entries.leader_commit(), m_log.getLastLogIdx()));
+
+            // 日志复制完成, 返回成功报文
+            AppendEntriesReply reply;
+            reply.set_success(true);
+            reply.set_term(m_state.getTerm());
+            w_lock.unlock();
+            resp.set_data(reply.SerializeAsString());
+        }
+        else {
+            M_SYLAR_LOG_ERROR(g_logger) << "日志复制失败：磁盘写入错误";
+            AppendEntriesReply reply;
+            reply.set_success(false);
+            reply.set_term(m_state.getTerm());
+            w_lock.unlock();
+            resp.set_data(reply.SerializeAsString());
+        }
+
+
+        w_lock.unlock();
+        resp.set_id(req->id());
+        resp.set_code(static_cast<int>(RPC::RpcCode::OK));
+        co_await session->co_sendRpcMessage(resp);
     }
     co_return;
 }
@@ -535,7 +642,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
 
 
     m_sylar::IOManager::getInstance()->schedule(
-            m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendEntries, this, entries)));
+            m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendEntries, this, m_log.getLastLogIdx(), true)));
 }
 
 
@@ -544,11 +651,6 @@ m_sylar::Task<AppendEntriesReply> RaftNode::handleHeartBeat(const AppendEntriesA
     AppendEntriesReply reply;
     reply.set_term(m_state.getTerm());
     // 更新定时器信息
-    // if (m_state.getState() == NodeState::State::Leader) {
-    //     reply.set_success(false);
-    //     M_SYLAR_LOG_WARN(g_logger) << "[非法状态] 节点 " << m_id << " 是leader但收到请心跳";
-    //     co_return reply;
-    // }
     if (entries.term() < m_state.getTerm()) {
         reply.set_success(false);
         co_return reply;

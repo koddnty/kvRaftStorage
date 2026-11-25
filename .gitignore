@@ -7,3 +7,5 @@ cmake-build-debug
 /CMakeFiles/
 /tests/CMakeFiles/
 cmake-build-asan
+.idea
+.debug_cluster

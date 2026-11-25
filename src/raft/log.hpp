@@ -107,7 +107,7 @@ public:
 
     std::optional<uint64_t> getTermAt(uint64_t idx);        // 获取索引日志的term（内存优先，窗口外读盘；取不到 nullopt）
     // 内存窗口内直接拷；窗口外按段顺序扫描读盘（不加载进 NodeLog）。idx > last ⇒ 空结果。
-    std::deque<LogEntry> getEntriesFrom(int idx, int32_t count);
+    std::deque<LogEntry> getEntriesFrom(uint64_t idx, int32_t count);
 
 
     [[nodiscard]] uint64_t getFirstIdx() const { return m_first_idx; }      // changed: 内存窗口起点
@@ -117,6 +117,9 @@ public:
 
     [[nodiscard]] uint64_t getPersistIndex() const { return m_persist_idx; }
     [[nodiscard]] int getFd() const { return m_fd; }
+
+    // 检查logentry是否能进行日志复制
+    [[nodiscard]] bool checkLastLog(uint64_t term, uint64_t idx) const;
 
 protected:
     void setCommitIndex(const uint64_t idx) {m_commit_idx = idx; }

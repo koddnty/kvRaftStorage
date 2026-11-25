@@ -81,29 +81,47 @@ public:
     ~RaftNode();
 
     // 流程控制，函数没有经过锁保护，请调用时保证
+    /**
+     * @brief 初始化节点数据,初始化节点选举定时器和leader定时器,初始化rpc方法
+     */
     m_sylar::Task<void> init(craft::RPC::RpcDefine& define, int node_id);
-    void start();
+    void start();       // 启动rpc(若未启动则无法完成其他通信依赖操作)
     m_sylar::Task<void> stop();
 
     // 选举函数
+    /*
+     *  选举出的leader资质：拥有最新的大部分节点已复制的日志。2
+     */
     // 此函数不管是不是有leader,在自己不是leader时直接就请求选举，因此需要其他位置确定状态
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> startElection();            // 开始申请投票，
     m_sylar::Task<void> handleRequestVote(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
     // log处理
-    // leader节点向其他节点发送日志复制请求，如果其他节点存在term更大情况，leader回退至follower
-    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(std::shared_ptr<AppendEntriesArgs> entry);        // leadre心跳发送
+    /*
+     * log 处理流程：leader向其他节点发送日志复制请求->leader收到大部分节点的success响应->
+     *              leader本地commit日志，推动commitIdx->leader通知其他节点commit当前日志。
+     */
+
+    /**
+     * @brief 作为leader向其他节点发送日志复制请求，如果日志前缀不匹配，会自动复制历史日志，但会拖慢当前日志复制请求速度
+     */
+    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(uint64_t idx, bool detection);        // leadre心跳发送
+    /**
+     * @brief 函数执行无须加锁，TODO 线程安全。
+     * @param detection 默认false，若为true会发送空包检测（不带日志项）
+     */
+    m_sylar::Task<bool> appendEntriesTo(uint64_t idx, size_t node_id, bool detection = false);          // 为节点i同步日志        // leadre心跳发送
     m_sylar::Task<void> handleAppendEntries(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
-    // leader启动时同步follower信息
+
+
+    // leader启动时同步follower信息 TODO 去除sync逻辑。
     m_sylar::Task<void> SyncNodeMessage();
     m_sylar::Task<void> handleSyncNodeMessage(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);
 
     // 状态函数
     [[nodiscard]] NodeState::State getState() const {return m_state.getState();}
     [[nodiscard]] RPC::RPCClient::ptr getClient() const {return m_mgr->getClient();}
-
-
 
 protected:
     // 心跳处理，由appendEntries路由到此

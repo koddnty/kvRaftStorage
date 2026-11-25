@@ -661,7 +661,7 @@ bool NodeLog::matchLog(uint64_t prev_log_index, uint64_t prev_log_term) const {
     return term == prev_log_term;
 }
 
-std::deque<LogEntry> NodeLog::getEntriesFrom(int idx, int32_t count) {
+std::deque<LogEntry> NodeLog::getEntriesFrom(uint64_t idx, int32_t count) {
     std::deque<LogEntry> result;
     if (count <= 0 || idx <= 0) { return result; }
     const uint64_t begin = static_cast<uint64_t>(idx);
@@ -707,6 +707,12 @@ std::deque<LogEntry> NodeLog::getEntriesFrom(int idx, int32_t count) {
     }
     return result;
 }
+
+
+bool NodeLog::checkLastLog(const uint64_t term, const uint64_t idx) const {
+    return m_last_log_idx == idx && m_last_log_term == term;
+}
+
 
 // ------------------------------------------------------------------ NodeLog：截断
 m_sylar::IOState NodeLog::truncateFrom(uint64_t index) {
