@@ -80,6 +80,17 @@ public:
     RaftNode();
     ~RaftNode();
 
+    enum class RespCode {
+        SUCCESS,            // 成功
+        InvalidState,       // 状态错误：如非leader节点为发送了复制日志请求
+        MisMatchLog,        // 日志不匹配
+        TimedOut,           // 回复超时
+        RPCFailed,          // 通信错误
+        Other               // 其他
+    };
+
+
+
     // 流程控制，函数没有经过锁保护，请调用时保证
     /**
      * @brief 初始化节点数据,初始化节点选举定时器和leader定时器,初始化rpc方法
@@ -105,12 +116,13 @@ public:
     /**
      * @brief 作为leader向其他节点发送日志复制请求，如果日志前缀不匹配，会自动复制历史日志，但会拖慢当前日志复制请求速度
      */
-    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(uint64_t idx, bool detection);        // leadre心跳发送
+    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(uint64_t idx);        // 日志复制
+    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendDetectEntries();        // 探测空包（如心跳包）
     /**
      * @brief 函数执行无须加锁，TODO 线程安全。
      * @param detection 默认false，若为true会发送空包检测（不带日志项）
      */
-    m_sylar::Task<bool> appendEntriesTo(uint64_t idx, size_t node_id, bool detection = false);          // 为节点i同步日志        // leadre心跳发送
+    m_sylar::Task<RespCode> appendEntriesTo(uint64_t idx, size_t node_id, bool detection = false);          // 为节点i同步日志        // leadre心跳发送
     m_sylar::Task<void> handleAppendEntries(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);            // 投票给其他人，未在term内投票且对方符合资质
 
 

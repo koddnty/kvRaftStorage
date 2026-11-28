@@ -380,15 +380,19 @@ m_sylar::Task<void> RaftNode::handleRequestVote
 }
 
 
-m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t idx, bool detection) {
+m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t idx)   {
     // 状态:
     // TODO 改为并行发送请求
     size_t successed_number = 1;
     for (int i = 0; i < m_node_count; i++) {
         if (i == m_id) {continue; }
         // 日志同步
-        bool rt = co_await appendEntriesTo(idx, i, detection);
-        if (!rt) {
+        RespCode rt = co_await appendEntriesTo(idx, i);
+        if (rt == RespCode::InvalidState && m_state.getState() != NodeState::State::Leader) {
+            co_return;
+        }
+
+        if (rt != RespCode::SUCCESS) {
             M_SYLAR_LOG_INFO(g_logger) << "未能向节点 {" << i << "} 复制日志: ";
             continue;
         }
@@ -406,17 +410,42 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t
 }
 
 
-m_sylar::Task<bool> RaftNode::appendEntriesTo(uint64_t idx, size_t node_id, bool detection) {
-    if (node_id == m_id) {co_return true; }
-    if (idx > m_log.getLastLogIdx()) {
-        M_SYLAR_LOG_ERROR(g_logger) << "尝试复制不存在的日志，索引为: " << idx << "  当前最新索引: " << m_log.getLastLogIdx();
-        co_return false;
-    }
+m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendDetectEntries() {
+    // 状态:
+    // TODO 改为并行发送请求
+    for (int i = 0; i < m_node_count; i++) {
+        if (i == m_id) {continue; }
+        // 日志同步
+        RespCode rt = co_await appendEntriesTo(m_log.getLastLogIdx(), i, /*detection=*/true);
+        if (rt == RespCode::InvalidState && m_state.getState() != NodeState::State::Leader) {
+            co_return;
+        }
 
+        if (rt != RespCode::SUCCESS) {
+            M_SYLAR_LOG_INFO(g_logger) << "未能向节点 {" << i << "} 发送心跳日志: ";
+            continue;
+        }
+    }
+    co_return;
+}
+
+
+m_sylar::Task<RaftNode::RespCode> RaftNode::appendEntriesTo(uint64_t idx, size_t node_id, bool detection) {
     std::shared_ptr<AppendEntriesArgs> entries = std::make_shared<AppendEntriesArgs>();
     {
         m_sylar::CoUniqueLock w_lock(m_mutex);
         co_await w_lock.lock();
+
+        if (node_id == m_id) {co_return RespCode::SUCCESS; }
+        if (idx > m_log.getLastLogIdx()) {
+            w_lock.unlock();
+            M_SYLAR_LOG_ERROR(g_logger) << "尝试复制不存在的日志，索引为: " << idx << "  当前最新索引: " << m_log.getLastLogIdx();
+            co_return RespCode::MisMatchLog;
+        }
+        if (m_state.getState() != NodeState::State::Leader) {co_return RespCode::InvalidState;}
+
+
+
         entries->set_leader_id(m_id);
         entries->set_term(m_state.getTerm());
         entries->set_leader_commit(m_log.getCommitIndex());
@@ -452,7 +481,7 @@ m_sylar::Task<bool> RaftNode::appendEntriesTo(uint64_t idx, size_t node_id, bool
 
     if (st != RPC::CallState::SUCCESS) {
         M_SYLAR_LOG_DEBUG(g_logger) << "和节点 {" << node_id << "} 复制日志失败\n" << *entries;
-        co_return false;
+        co_return RespCode::RPCFailed;
     }
 
     // resp 解析
@@ -462,23 +491,28 @@ m_sylar::Task<bool> RaftNode::appendEntriesTo(uint64_t idx, size_t node_id, bool
     {
         m_sylar::CoUniqueLock w_lock(m_mutex);
         co_await w_lock.lock();
+        if (m_state.getState() != NodeState::State::Leader) {
+            M_SYLAR_LOG_DEBUG(g_logger) << "日志复制/心跳终止，节点状态变化";
+            co_return RespCode::InvalidState;
+        }
+
         if (reply.term() > m_state.getTerm()) {     // 对方term更大
             // 回退至follower
             co_await becomeFollower(reply.term());
-            co_return false;
+            co_return RespCode::InvalidState;
         }
         else if (!reply.success()) {        // 日志回退
             // TODO 逐次回退到最近未同步
             w_lock.unlock();
-            bool rt = co_await appendEntriesTo(idx - 1, node_id);
-            if (rt == true) {
+            RespCode rt = co_await appendEntriesTo(idx - 1, node_id);
+            if (rt == RespCode::SUCCESS) {
                 co_return co_await appendEntriesTo(idx, node_id);
             }
-            co_return false;
+            co_return rt;
         }
         else {      // 同步成功，等待下次同步
             // TODO 继续同步逻辑
-            co_return true;
+            co_return RespCode::SUCCESS;
         }
     }
 }
@@ -642,7 +676,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
 
 
     m_sylar::IOManager::getInstance()->schedule(
-            m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendEntries, this, m_log.getLastLogIdx(), true)));
+            m_sylar::TaskCoro20::create_coro(std::bind(&RaftNode::appendDetectEntries, this)));
 }
 
 
@@ -716,9 +750,11 @@ m_sylar::Task<bool>  RaftNode::becomeLeader() {
         m_election_timer->cancel();
     }
 
+    bool rt = m_state.becomeLeader();
+    if (!rt) {co_return rt; }
 
-
-    co_return m_state.becomeLeader();
+    // TODO 发送no - op日志
+    co_return true;
 }
 
 }
