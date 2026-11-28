@@ -32,13 +32,20 @@ static uint64_t getRandFollowerElectionTimeMs() {
 
 static std::ostream& operator<< (std::ostream& os, const AppendEntriesArgs& entries) {
     os  << "entries info: \n"
-        << "leader_id" << entries.leader_id()
-        << "leader_commit" << entries.leader_commit()
-        << "prev_log_idx" << entries.prev_log_index()
-        << "prev_log_term" << entries.prev_log_term()
-        << "entries number count: " << entries.entries().size() << "\n";
+        << "\nleader_id" << entries.leader_id()
+        << "\nleader_commit" << entries.leader_commit()
+        << "\nprev_log_idx" << entries.prev_log_index()
+        << "\nprev_log_term" << entries.prev_log_term()
+        << "\nentries number count: " << entries.entries().size() << "\n";
     return  os;
 }
+
+static std::ostream& operator<< (std::ostream& os, const SyncMessageReply& message) {
+    os  << "\ncommit_log_index: " << message.commit_log_index()
+        << "\nlast_log_index:  " << message.last_log_index() << "\n";
+    return  os;
+}
+
 
 
 
@@ -154,7 +161,7 @@ RaftNode::~RaftNode() {
 
 
 // 流程控制
-m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
+m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id, const std::string& log_path) {
     if (m_rpc_state != 0) {
         M_SYLAR_LOG_ERROR(g_logger) << "bad raft node state: from unexpected(uninit) to start";
     }
@@ -170,7 +177,7 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
     m_mgr->create();
 
     // 节点数据初始化
-    co_await m_log.init(m_id);
+    co_await m_log.init(m_id, log_path + std::to_string(m_id));
 
     // 初始化client,server
     const int peers = co_await m_mgr->getClient()->init(define, m_id);
@@ -238,15 +245,6 @@ m_sylar::Task<void> RaftNode::init(craft::RPC::RpcDefine& define, int node_id) {
             std::placeholders::_2
     ));
 
-    // sync
-    RPCManager::GetInstanceWithOutInit()->getServer()->
-        registeRoute("craft", "syncMessage",std::bind(
-            &RaftNode::handleSyncNodeMessage,
-            this,
-            std::placeholders::_1,
-            std::placeholders::_2
-    ));
-
     // 其他变量设置
     m_rpc_state = 1;
     co_return;
@@ -264,6 +262,30 @@ void RaftNode::start() {
 m_sylar::Task<void> RaftNode::stop() {
     m_rpc_state = 3;
     co_return;
+}
+
+
+// 使用函数
+m_sylar::Task<RaftNode::RespCode> RaftNode::push(const std::string& cmd) {
+    if (m_state.getState() != NodeState::State::Leader) {co_return RespCode::InvalidState; }
+    // 日志和任期匹配,进行日志复制
+    // 日志追加
+    LogEntry entry;
+
+    m_sylar::CoUniqueLock w_lock(m_mutex);
+    co_await w_lock.lock();
+    entry.set_term(m_state.getTerm());
+    entry.set_command(cmd);
+    m_log.appendLog(entry);
+    uint64_t idx = m_log.getLastLogIdx();
+    if (m_sylar::IOState::SUCCESS != m_log.persistLog(idx)) {
+        m_log.truncateFrom(idx);
+        co_return RespCode::PersistError;
+    }
+
+    w_lock.unlock();
+    RespCode st = co_await appendEntries(m_log.getLastLogIdx());
+    co_return st;
 }
 
 
@@ -334,7 +356,6 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::startElection() {
     }
     w_lock.unlock();
     // 同步状态信息
-    co_await SyncNodeMessage();
     co_return;
 }
 
@@ -380,7 +401,7 @@ m_sylar::Task<void> RaftNode::handleRequestVote
 }
 
 
-m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t idx)   {
+m_sylar::Task<RaftNode::RespCode> RaftNode::appendEntries(uint64_t idx) {
     // 状态:
     // TODO 改为并行发送请求
     size_t successed_number = 1;
@@ -388,8 +409,10 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t
         if (i == m_id) {continue; }
         // 日志同步
         RespCode rt = co_await appendEntriesTo(idx, i);
+
+
         if (rt == RespCode::InvalidState && m_state.getState() != NodeState::State::Leader) {
-            co_return;
+            co_return RespCode::InvalidState;
         }
 
         if (rt != RespCode::SUCCESS) {
@@ -399,14 +422,18 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::appendEntries(uint64_t
         ++successed_number;
     }
 
+    m_sylar::CoUniqueLock w_lock(m_mutex);
+    co_await w_lock.lock();
     if (successed_number * 2 > m_node_count && m_state.getTerm() == m_log.getTermAt(idx)) {
         // 日志可提交
+
         if (!m_log.commitLog(idx)) {
+            w_lock.unlock();
             M_SYLAR_LOG_ERROR(g_logger) << "日志提交失败";
-            co_return;
+            co_return RespCode::CommitError;
         }
     }
-    co_return;
+    co_return RespCode::SUCCESS;
 }
 
 
@@ -451,12 +478,19 @@ m_sylar::Task<RaftNode::RespCode> RaftNode::appendEntriesTo(uint64_t idx, size_t
         entries->set_leader_commit(m_log.getCommitIndex());
         entries->set_prev_log_index(idx - 1);
 
-        auto log_term = m_log.getTermAt(idx - 1);
-        if (log_term.has_value()) {
-            entries->set_prev_log_term(m_log.getTermAt(idx - 1).value());       // 暂时用当前term
+        const uint64_t prev = (idx == 0) ? 0 : idx - 1;
+        entries->set_prev_log_index(prev);
+        if (prev == 0) {
+            entries->set_prev_log_term(0);              // 索引 0 是哨兵，term 恒为 0
         }
         else {
-            M_SYLAR_LOG_ERROR(g_logger) << "访问不存在的log，索引: " << idx;
+            auto log_term = m_log.getTermAt(prev);
+            if (log_term.has_value()) {
+                entries->set_prev_log_term(*log_term);
+            }
+            else {
+                M_SYLAR_LOG_ERROR(g_logger) << "访问不存在的log，索引: " << prev;
+            }
         }
     }
 
@@ -504,6 +538,9 @@ m_sylar::Task<RaftNode::RespCode> RaftNode::appendEntriesTo(uint64_t idx, size_t
         else if (!reply.success()) {        // 日志回退
             // TODO 逐次回退到最近未同步
             w_lock.unlock();
+            if (idx == 0) {                          // 没有更前面的日志可退了
+                co_return RespCode::MisMatchLog;
+            }
             RespCode rt = co_await appendEntriesTo(idx - 1, node_id);
             if (rt == RespCode::SUCCESS) {
                 co_return co_await appendEntriesTo(idx, node_id);
@@ -584,73 +621,6 @@ m_sylar::Task<void> RaftNode::handleAppendEntries
 }
 
 
-m_sylar::Task<void> RaftNode::SyncNodeMessage() {
-    auto req_bytes = std::make_shared<std::string>();
-    auto resp_bytes = std::make_shared<std::string>();
-
-    std::vector<PeerState> temps_state;
-    temps_state.resize(m_node_count);
-    // TODO 改为并行发送请求
-    for (int i = 0; i < m_node_count; i++) {
-        if (i == m_id) {continue; }
-
-        RPC::CallState st = co_await m_mgr->getClient()->call(i, "craft", "syncMessage", req_bytes, resp_bytes);
-        if (st != RPC::CallState::SUCCESS) {
-            M_SYLAR_LOG_DEBUG(g_logger) << "未能和节点 {" << i << "} 同步日志";
-            continue;
-        }
-
-        // resp 解析
-        SyncMessageReply reply;
-        reply.ParseFromString(*resp_bytes);     // 响应
-        // TODO 对响应处理, 如对方term大...
-        {
-            if (reply.term() > m_state.getTerm()) {     // 对方term更大
-                // TODO 回退至follower
-                co_await becomeFollower(reply.term());
-                co_return;
-            }
-            // 更新同步信息
-            temps_state[i].last_log_index = reply.last_log_index();
-            temps_state[i].commit_log_index = reply.commit_log_index();
-            temps_state[i].state = PeerState::State::Ready;
-        }
-    }
-
-    // 更新信息
-    m_sylar::CoUniqueLock w_lock(m_mutex);
-    co_await w_lock.lock();
-    m_peers_state = temps_state;
-    co_return;
-}
-
-
-static std::ostream& operator<< (std::ostream& os, const SyncMessageReply& message) {
-    os  << "\ncommit_log_index: " << message.commit_log_index()
-        << "\nlast_log_index:  " << message.last_log_index() << "\n";
-    return  os;
-}
-
-m_sylar::Task<void> RaftNode::handleSyncNodeMessage(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session) {
-    // 日志处理函数
-    // 心跳分支
-    RPC::Response resp;
-    {
-        m_sylar::CoUniqueLock w_lock(m_mutex);
-        co_await w_lock.lock();
-        SyncMessageReply reply;
-        reply.set_commit_log_index(m_log.getCommitIndex());
-        reply.set_last_log_index(m_log.getLastLogIdx());
-        M_SYLAR_LOG_DEBUG(g_logger) << "[handleSyncNodeMessage] 节点信息同步: " << reply;
-        resp.set_id(req->id());
-        resp.set_code(static_cast<int>(RPC::RpcCode::OK));
-        resp.set_data(reply.SerializeAsString());
-    }
-
-    co_await session->co_sendRpcMessage(resp);
-    co_return;
-}
-
 
 
 m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
@@ -681,7 +651,7 @@ m_sylar::Task<void, m_sylar::TaskBeginExecuter> RaftNode::heartBeat() {
 
 
 m_sylar::Task<AppendEntriesReply> RaftNode::handleHeartBeat(const AppendEntriesArgs& entries) {
-    M_SYLAR_LOG_INFO(g_logger) << "节点 " << m_id << " 收到主节点 " << entries.leader_id() << " 的心跳， term: " << m_state.getTerm();
+    M_SYLAR_LOG_DEBUG(g_logger) << "节点 " << m_id << " 收到主节点 " << entries.leader_id() << " 的心跳， term: " << m_state.getTerm();
     AppendEntriesReply reply;
     reply.set_term(m_state.getTerm());
     // 更新定时器信息

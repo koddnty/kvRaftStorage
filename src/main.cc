@@ -6,6 +6,7 @@
 #include <string>
 #include <signal.h>
 #include <sylar/basic/until.h>          // m_sylar::getExecutableDir()
+#include <sylar/server/http/httpServer.hpp>
 
 #include "rpc/rpcClient.hpp"
 #include "rpc/rpcManager.hpp"
@@ -32,11 +33,21 @@ void handle_signal(int sig) {
 // 节点初始化函数 ----------------------------------------
 m_sylar::Task<void, m_sylar::TaskBeginExecuter> initRaftNode
         (std::shared_ptr<RaftNode> node, RPC::RpcDefine def, int node_id) {
-    co_await node->init(def, node_id);
+    co_await node->init(def, node_id, "/home/koddnty/user/projects/KVraft/logs/");
     node->start();
 
 
     M_SYLAR_LOG_INFO(g_logger) << "初始化当前节点{" << node_id << "}" << " 完成, 节点已启动";
+    co_return;
+}
+
+
+m_sylar::Task<void> push() {
+    if (RaftNode::RespCode::SUCCESS !=  co_await node->push("hhh")) {
+        M_SYLAR_LOG_INFO(g_logger) << " push log failed";
+        co_return;
+    }
+    M_SYLAR_LOG_INFO(g_logger) << " push log successed";
     co_return;
 }
 
@@ -103,11 +114,27 @@ int main(int argc, char** argv) {
         std::bind(&initRaftNode, node, define, node_id)));
 
 
+    auto http_server = m_sylar::http::HttpServer(iom);
+
+    uint16_t port = 8666 + node_id;
+    m_sylar::http::HttpServer::ptr server(new m_sylar::http::HttpServer(iom));
+    m_sylar::Address::ptr addr = m_sylar::Address::LookupAnyIPAddress("0.0.0.0");
+    std::dynamic_pointer_cast<m_sylar::IPv4Address>(addr)->setPort(port);
+    server->bind(addr, 6);
+
+    server->GET("/push", m_sylar::http::HttpServer::HandlerFunc(push));
+
+    server->start();
+    M_SYLAR_LOG_INFO(g_logger) << "All Gate have been registered, ip:0.0.0.0:" << port;
+
+
+
     // 注册路由
     while (keep_running) {
         pause();  // 挂起，直到收到信号
     }
 
+    server->stop();
     iom->autoStop();
 
 

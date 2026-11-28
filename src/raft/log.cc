@@ -6,9 +6,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <filesystem>       // changed: 递归创建段文件目录
 #include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
+#include <system_error>     // changed: std::error_code
 #include <unistd.h>
 #include <vector>
 
@@ -115,6 +117,18 @@ static bool fsyncDirOf(const std::string& path) {
     const bool ok = (::fsync(fd) == 0);
     ::close(fd);
     return ok;
+}
+
+// changed: 递归创建目录（段文件目录不存在时自动建好）
+static bool ensureDir(const std::string& dir) {
+    if (dir.empty() || dir == ".") { return true; }
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);       // 已存在时返回 false 但 ec 为空
+    if (ec) {
+        M_SYLAR_LOG_ERROR(g_logger) << "[log] 创建目录失败: " << dir << " : " << ec.message();
+        return false;
+    }
+    return std::filesystem::is_directory(dir, ec);
 }
 
 static uint32_t crc32(const void* data, size_t size) {
@@ -254,7 +268,10 @@ m_sylar::Task<m_sylar::IOState> StateMeta::save() {
 
 // ------------------------------------------------------------------ NodeLog：段文件
 std::string NodeLog::segPath(uint64_t base_idx) const {
-    return std::to_string(m_node_id) + "_" + std::to_string(base_idx) + ".seg";
+    // changed: 段文件放在 init 指定的目录下，形如 {dir}/{node_id}_{begin_idx}.seg
+    std::string dir = m_dir;
+    if (!dir.empty() && dir.back() != '/') { dir += '/'; }
+    return dir + std::to_string(m_node_id) + "_" + std::to_string(base_idx) + ".seg";
 }
 
 const NodeLog::SegInfo* NodeLog::findSeg(uint64_t idx) const {
@@ -427,26 +444,32 @@ m_sylar::IOState NodeLog::flushWriteSeg(bool sync_data) {
 }
 
 // ------------------------------------------------------------------ NodeLog：初始化/恢复
-m_sylar::Task<m_sylar::IOState> NodeLog::init(int node_id) {
+m_sylar::Task<m_sylar::IOState> NodeLog::init(int node_id, const std::string& dir_path) {
     m_node_id = node_id;
+    m_dir = dir_path.empty() ? std::string(".") : dir_path;      // changed: 段文件目录
     m_segs.clear();
     m_log_entries.clear();
     if (m_fd >= 0) { ::close(m_fd); m_fd = -1; }
 
-    m_first_idx = 1;
+    // changed: 日志为空时窗口是 [0,0]（索引 0 = 哨兵），所以默认从 0 开始
+    m_first_idx = 0;
     m_last_log_idx = 0;
     m_last_log_term = 0;
     m_persist_idx = 0;
     m_commit_idx = 0;
 
-    // 1) 扫当前目录，找出 {node_id}_{begin}.seg
+    if (!ensureDir(m_dir)) {                                    // changed: 目录不存在则递归创建
+        co_return m_sylar::IOState::FAILED;
+    }
+
+    // 1) 扫目录，找出 {node_id}_{begin}.seg
     const std::string prefix = std::to_string(node_id) + "_";
     const std::string suffix = ".seg";
 
     std::vector<std::pair<uint64_t, std::string>> found;
-    DIR* dir = ::opendir(".");
+    DIR* dir = ::opendir(m_dir.c_str());
     if (dir == nullptr) {
-        M_SYLAR_LOG_ERROR(g_logger) << "[log] opendir(\".\") 失败";
+        M_SYLAR_LOG_ERROR(g_logger) << "[log] opendir(" << m_dir << ") 失败";
         co_return m_sylar::IOState::FAILED;
     }
     while (struct dirent* ent = ::readdir(dir)) {
@@ -456,7 +479,8 @@ m_sylar::Task<m_sylar::IOState> NodeLog::init(int node_id) {
         if (name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) { continue; }
         const std::string num = name.substr(prefix.size(), name.size() - prefix.size() - suffix.size());
         if (num.empty() || num.find_first_not_of("0123456789") != std::string::npos) { continue; }
-        found.emplace_back(static_cast<uint64_t>(std::strtoull(num.c_str(), nullptr, 10)), name);
+        const auto base = static_cast<uint64_t>(std::strtoull(num.c_str(), nullptr, 10));
+        found.emplace_back(base, segPath(base));                // changed: 统一用 segPath 拼完整路径
     }
     ::closedir(dir);
     std::sort(found.begin(), found.end());
@@ -533,11 +557,18 @@ m_sylar::Task<m_sylar::IOState> NodeLog::init(int node_id) {
     }
 
     if (m_segs.empty()) {
-        M_SYLAR_LOG_INFO(g_logger) << "[log] node " << node_id << " 无历史日志，从索引 1 开始";
-        m_first_idx = 1;
+        // changed: 全新节点——把索引 0 初始化为哨兵条目（term=0、空命令），真实日志从索引 1 开始。
+        //   这样 prev_log_index=0 / prev_log_term=0 天然对应"日志开头"，上层不用特判。
+        LogEntry sentinel;
+        sentinel.set_term(0);
+        m_log_entries.clear();
+        m_log_entries.push_back(std::move(sentinel));
+        m_first_idx = 0;
         m_last_log_idx = 0;
         m_last_log_term = 0;
         m_persist_idx = 0;
+        M_SYLAR_LOG_INFO(g_logger) << "[log] node " << node_id << " 无历史日志（dir=" << m_dir
+                                   << "），已初始化索引 0 的哨兵条目，真实日志从 1 开始";
         co_return m_sylar::IOState::SUCCESS;
     }
 
@@ -570,6 +601,7 @@ void NodeLog::appendLog(const LogEntry& entry) {
     if (m_log_entries.empty()) {
         m_first_idx = m_last_log_idx + 1;               // 空窗口：从下一条开始
     }
+    // 说明：日志为空时窗口里只有索引 0 的哨兵，所以这里 m_last_log_idx(0)+1 = 1 起追加
     m_log_entries.push_back(entry);
     ++m_last_log_idx;
     m_last_log_term = entry.term();
@@ -785,7 +817,14 @@ m_sylar::IOState NodeLog::truncateFrom(uint64_t index) {
     m_last_log_term = (m_last_log_idx == 0) ? 0
                      : (lookupTerm(m_last_log_idx, term) ? term : 0);
     if (m_persist_idx > m_last_log_idx) { m_persist_idx = m_last_log_idx; }
-    if (m_log_entries.empty()) {
+    if (m_last_log_idx == 0) {
+        // changed: 日志被截空 ⇒ 恢复索引 0 的哨兵条目（窗口回到 [0,0]）
+        m_log_entries.clear();
+        LogEntry sentinel;
+        sentinel.set_term(0);
+        m_log_entries.push_back(std::move(sentinel));
+        m_first_idx = 0;
+    } else if (m_log_entries.empty()) {
         m_first_idx = m_last_log_idx + 1;
     } else if (m_first_idx > m_last_log_idx) {
         m_first_idx = m_last_log_idx + 1;

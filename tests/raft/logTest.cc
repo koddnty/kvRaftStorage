@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -58,11 +59,16 @@ static m_sylar::Task<void> runAll() {
     std::printf("A. 初始化与空日志约定\n");
     NodeLog log;
     check(co_await log.init(7) == m_sylar::IOState::SUCCESS, "A1. init(7) 空目录成功");
-    check(log.getLastLogIdx() == 0 && log.getFirstIdx() == 1 && log.getLastLogTerm() == 0,
-          "A2. 空日志约定：last=0, first=1, last_term=0",
+    check(log.getLastLogIdx() == 0 && log.getFirstIdx() == 0 && log.getLastLogTerm() == 0,
+          "A2. 空日志约定：索引 0 是哨兵，last=0, first=0, last_term=0",
           "last=" + S(log.getLastLogIdx()) + " first=" + S(log.getFirstIdx()));
     check(log.getPersistIndex() == 0 && log.getCommitIndex() == 0, "A3. 位点初始为 0");
     check(log.matchLog(0, 0), "A4. matchLog(0,0) == true（哨兵）");
+    {
+        auto t0 = log.getTermAt(0);
+        check(t0.has_value() && *t0 == 0, "A5. 哨兵条目：getTermAt(0) == 0");
+    }
+    check(log.getEntriesFrom(0, 1).empty(), "A6. 哨兵不参与区间读取：getEntriesFrom(0,1) 为空");
 
     // ============================== B. 追加 / 落盘 ==============================
     std::printf("B. 追加与落盘\n");
@@ -227,6 +233,71 @@ static m_sylar::Task<void> runAll() {
         }
         StateMeta bad;
         check(co_await bad.load(7) == StateMeta::State::Failed, "I6. 文件损坏 -> Failed");
+    }
+
+    // ============================== J. 指定段文件目录 ==============================
+    std::printf("J. 指定段文件目录（init(node_id, dir)）\n");
+    {
+        const std::string data_dir = g_dir + "/data/node12";
+        NodeLog d;
+        check(co_await d.init(12, data_dir) == m_sylar::IOState::SUCCESS,
+              "J1. init(12, " + data_dir + ") 成功");
+        check(d.getFirstIdx() == 0 && d.getLastLogIdx() == 0, "J2. 新目录同样初始化索引 0 的哨兵");
+        for (int i = 1; i <= 3; ++i) {
+            d.appendLog(mkEntry(2, "dir" + std::to_string(i)));
+        }
+        check(d.persistLog(3) == m_sylar::IOState::SUCCESS, "J3. 落盘到指定目录");
+        check(fileSize(data_dir + "/12_1.seg") > kLogHeaderSize, "J4. 段文件确实写到了指定目录",
+              "size=" + S(fileSize(data_dir + "/12_1.seg")));
+        {
+            NodeLog r;
+            co_await r.init(12, data_dir);
+            check(r.getLastLogIdx() == 3 && r.getLastLogTerm() == 2, "J5. 重启后从该目录恢复",
+                  "last=" + S(r.getLastLogIdx()));
+            check(r.getEntriesFrom(1, 3).size() == 3, "J6. 恢复后内容可读");
+        }
+        {
+            NodeLog c;      // 目录不存在时应自动递归创建
+            const std::string nested = g_dir + "/nested/a/b";
+            check(co_await c.init(13, nested) == m_sylar::IOState::SUCCESS, "J7. 目录不存在时自动递归创建");
+            check(std::filesystem::is_directory(nested), "J8. 嵌套目录已创建");
+        }
+        {
+            NodeLog e;      // 目录参数为空 ⇒ 退回当前目录
+            check(co_await e.init(14, "") == m_sylar::IOState::SUCCESS, "J9. dir 为空时退回当前目录");
+        }
+    }
+
+    // ============================== K. 截空后恢复哨兵并重新写入 ==============================
+    std::printf("K. 截空后恢复哨兵并重新写入\n");
+    {
+        const std::string kdir = g_dir + "/data/node15";
+        NodeLog w;
+        co_await w.init(15, kdir);
+        for (int i = 1; i <= 4; ++i) {
+            w.appendLog(mkEntry(static_cast<uint64_t>(i), "k" + std::to_string(i)));
+        }
+        check(w.persistLog(4) == m_sylar::IOState::SUCCESS, "K1. 写 4 条");
+        check(w.truncateFrom(1) == m_sylar::IOState::SUCCESS, "K2. 截断到索引 1（清空真实日志）");
+        check(w.getLastLogIdx() == 0 && w.getFirstIdx() == 0, "K3. 截空后窗口回到 [0,0]（哨兵）",
+              "first=" + S(w.getFirstIdx()) + " last=" + S(w.getLastLogIdx()));
+        {
+            auto t0 = w.getTermAt(0);
+            check(t0.has_value() && *t0 == 0, "K4. 哨兵仍在：getTermAt(0) == 0");
+        }
+        w.appendLog(mkEntry(5, "k5"));
+        w.appendLog(mkEntry(6, "k6"));
+        check(w.getLastLogIdx() == 2, "K5. 截空后重新追加从索引 1 开始",
+              "last=" + S(w.getLastLogIdx()));
+        check(w.persistLog(2) == m_sylar::IOState::SUCCESS, "K6. 重新落盘成功");
+        {
+            NodeLog r;
+            co_await r.init(15, kdir);
+            auto es = r.getEntriesFrom(1, 2);
+            check(r.getLastLogIdx() == 2 && es.size() == 2 && es[0].term() == 5 && es[1].term() == 6,
+                  "K7. 重启后是新的 1..2（旧的 1..4 已被截掉）",
+                  "last=" + S(r.getLastLogIdx()) + " n=" + S(es.size()));
+        }
     }
 
     co_return;

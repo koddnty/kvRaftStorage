@@ -86,6 +86,8 @@ public:
         MisMatchLog,        // 日志不匹配
         TimedOut,           // 回复超时
         RPCFailed,          // 通信错误
+        PersistError,       // 持久化错误
+        CommitError,        // 提交错误
         Other               // 其他
     };
 
@@ -95,9 +97,13 @@ public:
     /**
      * @brief 初始化节点数据,初始化节点选举定时器和leader定时器,初始化rpc方法
      */
-    m_sylar::Task<void> init(craft::RPC::RpcDefine& define, int node_id);
+    m_sylar::Task<void> init(craft::RPC::RpcDefine& define, int node_id, const std::string& log_path);
     void start();       // 启动rpc(若未启动则无法完成其他通信依赖操作)
     m_sylar::Task<void> stop();
+
+    // 添加操作
+    m_sylar::Task<RespCode> push(const std::string& cmd);     // 发送命令
+
 
     // 选举函数
     /*
@@ -116,7 +122,7 @@ public:
     /**
      * @brief 作为leader向其他节点发送日志复制请求，如果日志前缀不匹配，会自动复制历史日志，但会拖慢当前日志复制请求速度
      */
-    m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendEntries(uint64_t idx);        // 日志复制
+    m_sylar::Task<RespCode> appendEntries(uint64_t idx);        // 日志复制
     m_sylar::Task<void, m_sylar::TaskBeginExecuter> appendDetectEntries();        // 探测空包（如心跳包）
     /**
      * @brief 函数执行无须加锁，TODO 线程安全。
@@ -127,9 +133,6 @@ public:
 
 
 
-    // leader启动时同步follower信息 TODO 去除sync逻辑。
-    m_sylar::Task<void> SyncNodeMessage();
-    m_sylar::Task<void> handleSyncNodeMessage(std::shared_ptr<RPC::Request> req, RPC::RPCSession::ptr session);
 
     // 状态函数
     [[nodiscard]] NodeState::State getState() const {return m_state.getState();}

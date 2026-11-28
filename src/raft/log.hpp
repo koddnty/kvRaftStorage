@@ -89,8 +89,9 @@ class NodeLog {
 public:
     using ptr = std::shared_ptr<NodeLog>;
 
-    // changed: 需要 node_id 才能定位 {node_id}_{begin_idx}.seg（多节点同目录时互不干扰）
-    m_sylar::Task<m_sylar::IOState> init(int node_id);                  // 初始化：扫段、修尾部、加载最后一段
+    // changed: 需要 node_id 定位 {node_id}_{begin_idx}.seg；dir 指定段文件目录（不存在会自动递归创建）
+    //   日志为空（全新节点）时，会把索引 0 初始化为哨兵条目（term=0、空命令），真实日志从 1 开始
+    m_sylar::Task<m_sylar::IOState> init(int node_id, const std::string& dir = ".");   // 初始化：扫段、修尾部、加载最后一段
     m_sylar::Task<m_sylar::IOState> coLoadLogSeg(uint64_t to_idx);      // 把内存窗口向前扩展到包含 to_idx
     m_sylar::Task<bool> coFreeLogSeg(uint64_t to_idx);                  // 释放内存窗口 [first_idx, to_idx]
 
@@ -144,7 +145,8 @@ private:
     m_sylar::IOState flushWriteSeg(bool sync_data);
 
     int m_node_id {-1};             // changed: 段文件命名用
-    uint64_t m_first_idx {1};       // changed: 内存窗口第一条日志的全局索引（空日志时 last < first）
+    std::string m_dir {"."};        // changed: 段文件所在目录（init 时确定，segPath 用它拼路径）
+    uint64_t m_first_idx {0};       // changed: 内存窗口首条索引；日志为空时窗口为 [0,0]（索引 0 是哨兵条目）
     int m_fd {-1};                  // changed: 原来是 vector<int>，但 getFd() 返回 int；当前只保留写入段 fd
     std::vector<SegInfo> m_segs;    // changed: 段表，按 base_idx 升序
 
